@@ -1,0 +1,173 @@
+{
+  "info": {
+    "name": "ico wallet rzr ttest",
+    "description": "OTP login → Razorpay wallet order → verify (with mock signature generation for Postman testing).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Login OTP Init",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"{{identifier}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/auth/login/otp-init"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  const json = pm.response.json();",
+              "  if (json.userId) pm.environment.set('userId', json.userId);",
+              "  pm.test('OTP init ok', () => true);",
+              "} else {",
+              "  pm.test('OTP init failed', () => false);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login OTP Verify",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"{{identifier}}\",\n  \"otp\": \"{{otp}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/auth/login/otp-verify"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const ok = pm.response.code === 200;",
+              "pm.test('OTP verify ok', () => ok);",
+              "if (ok) {",
+              "  const json = pm.response.json();",
+              "  if (json.token) pm.environment.set('token', json.token);",
+              "  if (json._id) pm.environment.set('userId', json._id);",
+              "  if (json.name) pm.environment.set('name', json.name);",
+              "  if (json.email) pm.environment.set('email', json.email);",
+              "  if (json.mobile) pm.environment.set('mobile', json.mobile);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Razorpay Order (Wallet Top-up)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": {{amount}},\n  \"currency\": \"{{currency}}\",\n  \"description\": \"{{description}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/payments/razorpay/order"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const ok = pm.response.code === 200;",
+              "pm.test('order created', () => ok);",
+              "if (ok) {",
+              "  const json = pm.response.json();",
+              "  if (json.orderId) {",
+              "    pm.environment.set('razorpay_order_id', json.orderId);",
+              "    pm.environment.set('orderId', json.orderId);",
+              "  }",
+              "  if (json.transactionId) pm.environment.set('transactionId', json.transactionId);",
+              "  if (json.amountInPaise) pm.environment.set('amountInPaise', json.amountInPaise);",
+              "  if (json.key) pm.environment.set('razorpay_key_id', json.key);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Verify Razorpay Payment (with mock signature)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Auto-generate a fake paymentId + signature using your secret for Postman testing",
+              "const orderId = pm.environment.get('razorpay_order_id');",
+              "const keySecret = pm.environment.get('razorpay_key_secret');",
+              "let paymentId = pm.environment.get('razorpay_payment_id');",
+              "if (!paymentId) {",
+              "  paymentId = 'pay_' + (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));",
+              "  pm.environment.set('razorpay_payment_id', paymentId);",
+              "}",
+              "if (orderId && keySecret) {",
+              "  const raw = `${orderId}|${paymentId}`;",
+              "  const sig = CryptoJS.HmacSHA256(raw, keySecret).toString(CryptoJS.enc.Hex);",
+              "  pm.environment.set('razorpay_signature', sig);",
+              "}",
+              "// Also set body variables for substitution",
+              "pm.environment.set('orderId', orderId || pm.environment.get('orderId'));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('verify response received', () => pm.response.code < 500);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": \"{{razorpay_order_id}}\",\n  \"paymentId\": \"{{razorpay_payment_id}}\",\n  \"signature\": \"{{razorpay_signature}}\",\n  \"transactionId\": \"{{transactionId}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/payments/razorpay/verify"
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "identifier", "value": "+911234567890", "description": "Email or mobile for OTP login" },
+    { "key": "otp", "value": "", "description": "Fill from console/ SMS" },
+    { "key": "token", "value": "" },
+    { "key": "amount", "value": "500" },
+    { "key": "currency", "value": "INR" },
+    { "key": "description", "value": "Wallet top-up" },
+    { "key": "razorpay_order_id", "value": "" },
+    { "key": "razorpay_payment_id", "value": "" },
+    { "key": "razorpay_signature", "value": "" },
+    { "key": "razorpay_key_secret", "value": "your_test_key_secret" },
+    { "key": "transactionId", "value": "" }
+  ]
+}

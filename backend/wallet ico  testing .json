@@ -1,0 +1,1129 @@
+{
+  "info": {
+    "name": "ICO Backend Full Flow v2",
+    "description": "Auth, KYC, wallet, ICO, referral, notifications, and admin flows.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth & Onboarding",
+      "item": [
+        {
+          "name": "Signup Mobile Init",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{name}}\",\n  \"mobile\": \"{{mobile}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"referralCode\": \"{{referralCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/signup/mobile-init"
+          }
+        },
+        {
+          "name": "Signup Email Init",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{name}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"referralCode\": \"{{referralCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/signup/email-init"
+          }
+        },
+        {
+          "name": "Signup Combined Init",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{name}}\",\n  \"email\": \"{{email}}\",\n  \"mobile\": \"{{mobile}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"password\": \"{{password}}\",\n  \"referralCode\": \"{{referralCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/signup/combined-init"
+          }
+        },
+        {
+          "name": "Signup Verify OTP (with PIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"otp\": \"{{otp}}\",\n  \"type\": \"mobile\",\n  \"pin\": \"{{pin}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/signup/verify"
+          }
+        },
+        {
+          "name": "Setup PIN",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"{{pin}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/pin/setup"
+          }
+        },
+        {
+          "name": "Login OTP Init",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{mobile}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login/otp-init"
+          }
+        },
+        {
+          "name": "Login OTP Verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{mobile}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login/otp-verify"
+          }
+        },
+        {
+          "name": "Login PIN",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{mobile}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"pin\": \"{{pin}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login/pin"
+          }
+        },
+        {
+          "name": "Login Mobile Init (legacy)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mobile\": \"{{mobile}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login/mobile-init"
+          }
+        },
+        {
+          "name": "Login Mobile Verify (legacy)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mobile\": \"{{mobile}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login/mobile-verify"
+          }
+        },
+        {
+          "name": "Onboarding Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/onboarding-status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "KYC",
+      "item": [
+        {
+          "name": "Upload Aadhaar Front",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "document", "type": "file", "src": "" }
+              ]
+            },
+            "url": "{{baseUrl}}/api/kyc/upload?documentType=aadhaar_front"
+          }
+        },
+        {
+          "name": "Upload Aadhaar Back",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "document", "type": "file", "src": "" }
+              ]
+            },
+            "url": "{{baseUrl}}/api/kyc/upload?documentType=aadhaar_back"
+          }
+        },
+        {
+          "name": "Upload PAN",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "document", "type": "file", "src": "" }
+              ]
+            },
+            "url": "{{baseUrl}}/api/kyc/upload?documentType=pan"
+          }
+        },
+        {
+          "name": "Upload Selfie",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "document", "type": "file", "src": "" }
+              ]
+            },
+            "url": "{{baseUrl}}/api/kyc/upload?documentType=selfie"
+          }
+        },
+        {
+          "name": "Submit KYC",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metadata\": {\n    \"aadhaarNumber\": \"123412341234\",\n    \"panNumber\": \"ABCDE1234F\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/kyc/submit"
+          }
+        },
+        {
+          "name": "KYC Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/kyc/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Profile & Settings",
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/profile"
+          }
+        },
+        {
+          "name": "Get Countries",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/countries"
+          }
+        },
+        {
+          "name": "Update Country",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"country\": \"IN\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/country"
+          }
+        },
+        {
+          "name": "OTP Init - Withdrawal",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"withdrawal\",\n  \"channel\": \"mobile\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/otp/init"
+          }
+        },
+        {
+          "name": "OTP Init - Bank Add",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"bank_add\",\n  \"channel\": \"email\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/otp/init"
+          }
+        },
+        {
+          "name": "OTP Init - UPI Add",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"upi_add\",\n  \"channel\": \"email\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/otp/init"
+          }
+        },
+        {
+          "name": "OTP Init - Email Change",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"change_email\",\n  \"channel\": \"email\",\n  \"newEmail\": \"{{newEmail}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/otp/init"
+          }
+        },
+        {
+          "name": "Confirm Email Change",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/email/change-verify"
+          }
+        },
+        {
+          "name": "Change PIN - Send OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/api/user/pin/change"
+          }
+        },
+        {
+          "name": "Change PIN - Confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPin\": \"{{newPin}}\",\n  \"confirmPin\": \"{{confirmPin}}\",\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/pin/change"
+          }
+        },
+        {
+          "name": "Request Mobile Change",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newMobile\": \"{{newMobile}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/mobile/change-request"
+          }
+        },
+        {
+          "name": "List Mobile Change Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/mobile/change-requests"
+          }
+        },
+        {
+          "name": "Add Bank Details",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountHolderName\": \"{{name}}\",\n  \"accountNumber\": \"1234567890\",\n  \"ifsc\": \"IFSC0001\",\n  \"bankName\": \"Test Bank\",\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/bank"
+          }
+        },
+        {
+          "name": "Add UPI Details",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"upiId\": \"{{upiId}}\",\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/user/upi"
+          }
+        },
+        {
+          "name": "List Bank Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/bank/requests"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wallet",
+      "item": [
+        {
+          "name": "Wallet Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/wallet/summary"
+          }
+        },
+        {
+          "name": "Wallet Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/wallet/analytics"
+          }
+        },
+        {
+          "name": "Wallet Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/wallet/transactions?limit=50"
+          }
+        },
+        {
+          "name": "Wallet Topup - PhonePe",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 500\n}"
+            },
+            "url": "{{baseUrl}}/api/wallet/topup"
+          }
+        },
+        {
+          "name": "Wallet Topup - Razorpay",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 500,\n  \"paymentMethod\": \"razorpay\"\n}"
+            },
+            "url": "{{baseUrl}}/api/wallet/topup"
+          }
+        },
+        {
+          "name": "Withdraw - Bank",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 200,\n  \"payoutMethod\": \"bank\",\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/wallet/withdraw"
+          }
+        },
+        {
+          "name": "Withdraw - UPI",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 200,\n  \"payoutMethod\": \"upi\",\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/wallet/withdraw"
+          }
+        },
+        {
+          "name": "Swap Main to Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenAmount\": 50\n}"
+            },
+            "url": "{{baseUrl}}/api/wallet/swap"
+          }
+        },
+        {
+          "name": "Stake Tokens",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenAmount\": 100\n}"
+            },
+            "url": "{{baseUrl}}/api/wallet/stake"
+          }
+        },
+        {
+          "name": "List Stakes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/wallet/stakes"
+          }
+        },
+        {
+          "name": "Claim Stake",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/wallet/stakes/{{stakeId}}/claim"
+          }
+        },
+        {
+          "name": "Redeem Referral Earnings",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 50\n}"
+            },
+            "url": "{{baseUrl}}/api/wallet/referral/redeem"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ICO",
+      "item": [
+        {
+          "name": "ICO Price",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/ico/price"
+          }
+        },
+        {
+          "name": "ICO Stages",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/ico/stages"
+          }
+        },
+        {
+          "name": "ICO Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/ico/summary"
+          }
+        },
+        {
+          "name": "Buy Tokens - Wallet",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenAmount\": 10,\n  \"useWallet\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/ico/buy"
+          }
+        },
+        {
+          "name": "Buy Tokens - Razorpay",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenAmount\": 10,\n  \"paymentMethod\": \"razorpay\"\n}"
+            },
+            "url": "{{baseUrl}}/api/ico/buy"
+          }
+        },
+        {
+          "name": "Sell Tokens - OTP Required",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenAmount\": 5,\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/ico/sell"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Referral",
+      "item": [
+        {
+          "name": "Referral Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/referral/summary"
+          }
+        },
+        {
+          "name": "Referral Earnings",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/referral/earnings"
+          }
+        },
+        {
+          "name": "Referral Activities",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/referral/activities"
+          }
+        },
+        {
+          "name": "Referral Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/referral/code"
+          }
+        },
+        {
+          "name": "Referral Downline",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/referral/downline?depth=0"
+          }
+        },
+        {
+          "name": "Referral Tree",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/referral/tree?maxDepth=3"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/notifications"
+          }
+        },
+        {
+          "name": "Mark Notification Read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{baseUrl}}/api/user/notifications/{{notificationId}}/read"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Razorpay Wallet Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 500,\n  \"currency\": \"INR\",\n  \"description\": \"Wallet top-up via Razorpay\"\n}"
+            },
+            "url": "{{baseUrl}}/api/payments/razorpay/order"
+          }
+        },
+        {
+          "name": "PhonePe Callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data\": {\n    \"merchantTransactionId\": \"{{transactionId}}\",\n    \"transactionId\": \"PH123\",\n    \"code\": \"PAYMENT_SUCCESS\"\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/payments/phonepe/callback"
+          }
+        },
+        {
+          "name": "Razorpay Verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"order_123\",\n  \"paymentId\": \"pay_123\",\n  \"signature\": \"sig_123\",\n  \"transactionId\": \"{{transactionId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/payments/razorpay/verify"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Panel",
+      "item": [
+        {
+          "name": "Admin Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/stats"
+          }
+        },
+        {
+          "name": "Users List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/users?limit=20"
+          }
+        },
+        {
+          "name": "User Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/users/{{adminUserId}}"
+          }
+        },
+        {
+          "name": "Update User Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": false,\n  \"reason\": \"Manual disable\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/users/{{adminUserId}}/status"
+          }
+        },
+        {
+          "name": "Update User Email",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin_updated@example.com\",\n  \"isVerified\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/users/{{adminUserId}}/email"
+          }
+        },
+        {
+          "name": "Update User PIN",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"1234\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/users/{{adminUserId}}/pin"
+          }
+        },
+        {
+          "name": "KYC List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/kyc?status=pending"
+          }
+        },
+        {
+          "name": "KYC Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/kyc/{{kycId}}"
+          }
+        },
+        {
+          "name": "KYC Review",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"verified\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/kyc/{{kycId}}/status"
+          }
+        },
+        {
+          "name": "ICO Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/ico/transactions"
+          }
+        },
+        {
+          "name": "Referral Earnings List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/referrals/earnings"
+          }
+        },
+        {
+          "name": "Update Referral Earning Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"released\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/referrals/earnings/{{earningId}}"
+          }
+        },
+        {
+          "name": "Referral Tree (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/referrals/tree/{{adminUserId}}?maxDepth=3"
+          }
+        },
+        {
+          "name": "Wallet Transactions (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/wallet/transactions"
+          }
+        },
+        {
+          "name": "Update Wallet Transaction",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"processed\",\n  \"adminNote\": \"Reviewed\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/wallet/transactions/{{transactionId}}"
+          }
+        },
+        {
+          "name": "Bank Requests (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/bank/requests"
+          }
+        },
+        {
+          "name": "Review Bank Request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approved\",\n  \"note\": \"Approved by admin\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/bank/requests/{{requestId}}"
+          }
+        },
+        {
+          "name": "Mobile Requests (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/mobile/requests"
+          }
+        },
+        {
+          "name": "Review Mobile Request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approved\",\n  \"note\": \"Approved by admin\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/mobile/requests/{{requestId}}"
+          }
+        },
+        {
+          "name": "Admin Notifications List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/admin/notifications"
+          }
+        },
+        {
+          "name": "Create Notification (Broadcast)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"System Update\",\n  \"message\": \"Maintenance scheduled tonight\",\n  \"type\": \"admin\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/notifications"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "razorpayKeyId", "value": "rzp_test_1DP5mmOlF5G5ag" },
+    { "key": "razorpayKeySecret", "value": "test_secret_1234567890" },
+    { "key": "name", "value": "Test User" },
+    { "key": "mobile", "value": "9000000000" },
+    { "key": "countryCode", "value": "+91" },
+    { "key": "newMobile", "value": "9000000001" },
+    { "key": "email", "value": "test@example.com" },
+    { "key": "newEmail", "value": "new@example.com" },
+    { "key": "password", "value": "password123" },
+    { "key": "pin", "value": "1234" },
+    { "key": "newPin", "value": "4321" },
+    { "key": "confirmPin", "value": "4321" },
+    { "key": "otp", "value": "123456" },
+    { "key": "referralCode", "value": "REFCODE" },
+    { "key": "upiId", "value": "user@upi" },
+    { "key": "token", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "adminUserId", "value": "" },
+    { "key": "kycId", "value": "" },
+    { "key": "transactionId", "value": "" },
+    { "key": "stakeId", "value": "" },
+    { "key": "requestId", "value": "" },
+    { "key": "notificationId", "value": "" },
+    { "key": "earningId", "value": "" }
+  ]
+}
