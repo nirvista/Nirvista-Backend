@@ -9,6 +9,7 @@ const {
   swapMainToToken,
   stakeTokens,
   listStakes,
+  requestStakeWithdrawal,
   claimStake,
   getWalletAnalytics,
   adminListWalletTransactions,
@@ -26,6 +27,7 @@ router.post('/withdraw', requestWalletWithdrawal);
 router.post('/swap', swapMainToToken);
 router.post('/stake', stakeTokens);
 router.get('/stakes', listStakes);
+router.post('/stakes/:stakeId/withdraw', requestStakeWithdrawal);
 router.post('/stakes/:stakeId/claim', claimStake);
 router.post('/referral/redeem', redeemReferralEarnings);
 

@@ -11,6 +11,7 @@ const {
   createOrder: createRazorpayOrder,
   RAZORPAY_KEY_ID,
 } = require('../utils/razorpay');
+const { createPayUPaymentPayload } = require('../utils/payu');
 const { getOrCreateWalletAccount } = require('../utils/walletAccount');
 const { distributeReferralCommission } = require('../utils/referralService');
 const { resolveStages } = require('../utils/icoStages');
@@ -30,8 +31,7 @@ const MIN_REFERRAL_REDEEM = Number(
   process.env.WALLET_MIN_REFERRAL_REDEEM || 10,
 );
 const MIN_STAKE_TOKENS = Number(process.env.STAKING_MIN_TOKENS || 100);
-const STAKE_INTEREST_RATE = Number(process.env.STAKING_INTEREST_RATE || 8);
-const STAKE_LOCK_DAYS = Number(process.env.STAKING_LOCK_DAYS || 30);
+const FLUID_NOTICE_DAYS = Number(process.env.FLUID_STACK_NOTICE_DAYS || 30);
 const WALLET_TRANSACTION_STATUSES = [
   'initiated',
   'pending',
@@ -41,6 +41,42 @@ const WALLET_TRANSACTION_STATUSES = [
   'cancelled',
 ];
 
+const STACKING_PLANS = {
+  fixed: {
+    label: 'Fixed Stack',
+    description: 'Higher returns - Locked until maturity',
+    badge: '🔥',
+    noticeDays: 0,
+    allowEarlyWithdrawal: false,
+    durations: {
+      3: 6,
+      6: 8,
+      12: 10,
+      24: 16,
+    },
+  },
+  fluid: {
+    label: 'Fluid Stack',
+    description: 'Flexible withdrawal - 1-month notice required',
+    badge: null,
+    noticeDays: FLUID_NOTICE_DAYS,
+    allowEarlyWithdrawal: true,
+    durations: {
+      3: 3,
+      6: 6,
+      12: 8,
+      24: 10,
+    },
+  },
+};
+
+const VALID_STACK_TYPES = Object.keys(STACKING_PLANS);
+const VALID_STACK_DURATIONS = new Set(
+  Object.values(STACKING_PLANS).flatMap((plan) =>
+    Object.keys(plan.durations).map((months) => Number(months)),
+  ),
+);
+
 const sanitizeTransaction = (transaction) => {
   if (!transaction) {
     return transaction;
@@ -48,6 +84,7 @@ const sanitizeTransaction = (transaction) => {
   const doc = transaction.toObject ? transaction.toObject() : transaction;
   delete doc.phonePePayload;
   delete doc.phonePeResponse;
+  delete doc.payuPayload;
   return doc;
 };
 
@@ -76,6 +113,48 @@ const recordStatusChange = (transaction, status, changedBy, note) => {
   };
   transaction.statusHistory = [...(transaction.statusHistory || []), entry];
 };
+
+const roundAmount = (value) => Number((Number(value) || 0).toFixed(4));
+
+const getMonthlyRate = (stackType, durationMonths) => {
+  const plan = STACKING_PLANS[stackType];
+  return plan ? plan.durations[durationMonths] : undefined;
+};
+
+const buildInterestSchedule = (startAt, monthlyAmount, durationMonths) => {
+  const schedule = [];
+  for (let monthIndex = 1; monthIndex <= durationMonths; monthIndex += 1) {
+    const creditedAt = new Date(startAt.getTime());
+    creditedAt.setMonth(creditedAt.getMonth() + monthIndex);
+    schedule.push({
+      label: `Month ${monthIndex}`,
+      amount: monthlyAmount,
+      status: 'pending',
+      creditedAt,
+    });
+  }
+  return schedule;
+};
+
+const buildStackPlanPayload = () =>
+  VALID_STACK_TYPES.map((stackType) => {
+    const plan = STACKING_PLANS[stackType];
+    const durations = Object.entries(plan.durations)
+      .map(([duration, rate]) => ({
+        months: Number(duration),
+        monthlyInterestRate: rate,
+      }))
+      .sort((a, b) => a.months - b.months);
+    return {
+      type: stackType,
+      label: plan.label,
+      description: plan.description,
+      badge: plan.badge,
+      noticeDays: plan.noticeDays,
+      allowEarlyWithdrawal: plan.allowEarlyWithdrawal,
+      durations,
+    };
+  });
 
 const getWalletSummary = async (req, res) => {
   try {
@@ -121,21 +200,41 @@ const getWalletSummary = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(5);
 
-    const [stakingAgg] = await StakingPosition.aggregate([
+    const stakingStatuses = [
+      'active',
+      'withdrawal_requested',
+      'withdrawal_available',
+      'matured',
+    ];
+    const stakingAgg = await StakingPosition.aggregate([
       {
         $match: {
           user: userObjectId,
-          status: { $in: ['active', 'matured'] },
+          status: { $in: stakingStatuses },
         },
       },
       {
         $group: {
-          _id: null,
+          _id: '$stackType',
           stakedBalance: { $sum: '$tokenAmount' },
           expectedReturn: { $sum: '$expectedReturn' },
         },
       },
     ]);
+    const stakingSummary = stakingAgg.reduce(
+      (acc, entry) => {
+        const type = entry._id || 'fixed';
+        acc.totalStaked += entry.stakedBalance;
+        acc.totalExpectedReturn += entry.expectedReturn;
+        acc.breakdown[type] = {
+          stakedBalance: entry.stakedBalance,
+          expectedReturn: entry.expectedReturn,
+        };
+        return acc;
+      },
+      { totalStaked: 0, totalExpectedReturn: 0, breakdown: {} },
+    );
+    const stackingPlans = buildStackPlanPayload();
 
     const combinedActivity = [
       ...recentTransactions.map((tx) => ({
@@ -187,10 +286,11 @@ const getWalletSummary = async (req, res) => {
         balance: user?.rewardsWalletBalance || 0,
       },
       stakingWallet: {
-        stakedBalance: stakingAgg?.stakedBalance || 0,
-        expectedReturn: stakingAgg?.expectedReturn || 0,
-        interestRate: STAKE_INTEREST_RATE,
+        totalStaked: stakingSummary.totalStaked,
+        totalExpectedReturn: stakingSummary.totalExpectedReturn,
+        breakdown: stakingSummary.breakdown,
       },
+      stackingPlans,
       pendingTopups: pendingTopups?.amount || 0,
       pendingTopupCount: pendingTopups?.count || 0,
       recentTransactions: recentTransactions.map(sanitizeTransaction),
@@ -275,6 +375,7 @@ const initiateWalletTopup = async (req, res) => {
     const wallet = await getOrCreateWalletAccount(req.user._id);
     const method = (req.body.paymentMethod || '').toLowerCase();
     const useRazorpay = method === 'razorpay';
+    const usePayU = method === 'payu';
 
     const transaction = await WalletTransaction.create({
       user: req.user._id,
@@ -291,6 +392,41 @@ const initiateWalletTopup = async (req, res) => {
         paymentInstrument: req.body.paymentInstrument,
       },
     });
+
+    if (usePayU) {
+      const payuSession = createPayUPaymentPayload({
+        amount,
+        txnid: transaction._id.toString(),
+        firstname: req.user?.name || 'User',
+        email: req.user?.email || '',
+        phone: req.user?.mobile || '',
+        productinfo: `Wallet top-up of INR ${amount}`,
+      });
+
+      transaction.paymentGateway = 'payu';
+      transaction.payuTransactionId = payuSession.payload.txnid;
+      transaction.payuPayload = payuSession.payload;
+      transaction.merchantTransactionId = payuSession.payload.txnid;
+      await transaction.save();
+
+      return res.status(201).json({
+        wallet: {
+          balance: wallet.balance,
+          currency: wallet.currency,
+          pendingWithdrawals: wallet.pendingWithdrawals,
+        },
+        transaction: sanitizeTransaction(transaction),
+        paymentGateway: 'payu',
+        payu: {
+          endpoint: payuSession.endpoint,
+          payload: payuSession.payload,
+          hash: payuSession.hash,
+          successUrl: payuSession.payload.surl,
+          failureUrl: payuSession.payload.furl,
+          mock: payuSession.mock,
+        },
+      });
+    }
 
     if (useRazorpay) {
       const order = await createRazorpayOrder({
@@ -621,6 +757,25 @@ const stakeTokens = async (req, res) => {
       });
     }
 
+    const stackType = (req.body.stackType || 'fixed').toLowerCase();
+    if (!VALID_STACK_TYPES.includes(stackType)) {
+      return res.status(400).json({
+        message: `stackType must be one of ${VALID_STACK_TYPES.join(', ')}`,
+      });
+    }
+
+    const durationMonths = Number(req.body.durationMonths);
+    if (Number.isNaN(durationMonths) || !VALID_STACK_DURATIONS.has(durationMonths)) {
+      return res.status(400).json({
+        message: `durationMonths must be one of ${[...VALID_STACK_DURATIONS].join(', ')}`,
+      });
+    }
+
+    const monthlyRate = getMonthlyRate(stackType, durationMonths);
+    if (monthlyRate === undefined) {
+      return res.status(400).json({ message: 'Invalid stack type or duration' });
+    }
+
     await ensureKycVerified(req.user._id);
 
     const holding = await IcoHolding.findOne({ user: req.user._id });
@@ -631,29 +786,41 @@ const stakeTokens = async (req, res) => {
     holding.balance -= tokenAmount;
     await holding.save();
 
-    const interestAmount = Number(((tokenAmount * STAKE_INTEREST_RATE) / 100).toFixed(4));
-    const expectedReturn = Number((tokenAmount + interestAmount).toFixed(4));
+    const monthlyInterestAmount = roundAmount((tokenAmount * monthlyRate) / 100);
+    const interestAmount = roundAmount(monthlyInterestAmount * durationMonths);
+    const expectedReturn = roundAmount(tokenAmount + interestAmount);
     const now = new Date();
     const maturesAt = new Date(now);
-    maturesAt.setDate(maturesAt.getDate() + STAKE_LOCK_DAYS);
+    maturesAt.setMonth(maturesAt.getMonth() + durationMonths);
+
+    const plan = STACKING_PLANS[stackType];
+    const interestHistory = buildInterestSchedule(now, monthlyInterestAmount, durationMonths);
 
     const stake = await StakingPosition.create({
       user: req.user._id,
       tokenAmount,
-      interestRate: STAKE_INTEREST_RATE,
+      stackType,
+      durationMonths,
+      interestRate: monthlyRate,
+      monthlyInterestAmount,
       interestAmount,
       expectedReturn,
       startedAt: now,
       maturesAt,
+      interestHistory,
+      withdrawal: {
+        noticeDays: plan.noticeDays,
+      },
       metadata: {
-        lockDays: STAKE_LOCK_DAYS,
+        stackPlan: stackType,
+        durationMonths,
       },
     });
 
     await createUserNotification({
       userId: req.user._id,
       title: 'Staking started',
-      message: `Staked ${tokenAmount} tokens. Expected return ${expectedReturn} tokens.`,
+      message: `Started a ${durationMonths}-month ${stackType.toUpperCase()} stack for ${tokenAmount} tokens.`,
       type: 'transaction',
       metadata: { stakeId: stake._id },
     });
@@ -674,8 +841,21 @@ const listStakes = async (req, res) => {
   try {
     const now = new Date();
     await StakingPosition.updateMany(
-      { user: req.user._id, status: 'active', maturesAt: { $lte: now } },
+      {
+        user: req.user._id,
+        status: 'active',
+        stackType: 'fixed',
+        maturesAt: { $lte: now },
+      },
       { $set: { status: 'matured' } },
+    );
+    await StakingPosition.updateMany(
+      {
+        user: req.user._id,
+        status: 'withdrawal_requested',
+        'withdrawal.withdrawableAt': { $lte: now },
+      },
+      { $set: { status: 'withdrawal_available' } },
     );
 
     const stakes = await StakingPosition.find({ user: req.user._id })
@@ -683,6 +863,50 @@ const listStakes = async (req, res) => {
       .limit(Math.min(Number(req.query.limit) || 100, 200));
 
     res.json(stakes);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const requestStakeWithdrawal = async (req, res) => {
+  try {
+    const { stakeId } = req.params;
+    const stake = await StakingPosition.findOne({
+      _id: stakeId,
+      user: req.user._id,
+    });
+
+    if (!stake) {
+      return res.status(404).json({ message: 'Stake not found' });
+    }
+
+    if (stake.stackType !== 'fluid') {
+      return res.status(400).json({
+        message: 'Withdrawal notice is only available for fluid stacks',
+      });
+    }
+
+    if (['claimed', 'cancelled'].includes(stake.status)) {
+      return res
+        .status(400)
+        .json({ message: 'Cannot request withdrawal for a closed stake' });
+    }
+
+    const now = new Date();
+    const withdrawableAt = new Date(now);
+    withdrawableAt.setDate(withdrawableAt.getDate() + FLUID_NOTICE_DAYS);
+
+    stake.withdrawal = {
+      ...stake.withdrawal,
+      noticeDays: FLUID_NOTICE_DAYS,
+      requestedAt: now,
+      withdrawableAt,
+    };
+    stake.status =
+      withdrawableAt <= now ? 'withdrawal_available' : 'withdrawal_requested';
+    await stake.save();
+
+    res.json(stake);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -701,12 +925,29 @@ const claimStake = async (req, res) => {
     }
 
     const now = new Date();
-    if (stake.maturesAt > now) {
-      return res.status(400).json({ message: 'Stake not yet matured' });
-    }
-
     if (stake.status === 'claimed') {
       return res.status(400).json({ message: 'Stake already claimed' });
+    }
+    if (stake.stackType === 'fixed') {
+      if (stake.maturesAt > now) {
+        return res.status(400).json({ message: 'Stake not yet matured' });
+      }
+    } else {
+      const withdrawableAt = stake.withdrawal?.withdrawableAt;
+      if (!withdrawableAt) {
+        return res.status(400).json({
+          message: 'Create a withdrawal notice before claiming a fluid stack',
+        });
+      }
+
+      if (withdrawableAt > now) {
+        return res
+          .status(400)
+          .json({ message: 'Withdrawal notice is still in the cooling period' });
+      }
+
+      stake.status = 'withdrawal_available';
+      stake.withdrawal.completedAt = now;
     }
 
     stake.status = 'claimed';
@@ -745,7 +986,7 @@ const getWalletAnalytics = async (req, res) => {
     const user = await User.findById(userId);
     const holding = await IcoHolding.findOne({ user: userId });
 
-    const [buyAgg, sellAgg, stakeAgg] = await Promise.all([
+    const [buyAgg, sellAgg, stackBreakdownAgg] = await Promise.all([
       IcoTransaction.aggregate([
         { $match: { user: new mongoose.Types.ObjectId(userId), type: 'buy', status: 'completed' } },
         { $group: { _id: null, tokens: { $sum: '$tokenAmount' }, fiat: { $sum: '$fiatAmount' } } },
@@ -756,9 +997,29 @@ const getWalletAnalytics = async (req, res) => {
       ]),
       StakingPosition.aggregate([
         { $match: { user: new mongoose.Types.ObjectId(userId) } },
-        { $group: { _id: null, staked: { $sum: '$tokenAmount' }, expected: { $sum: '$expectedReturn' } } },
+        {
+          $group: {
+            _id: '$stackType',
+            staked: { $sum: '$tokenAmount' },
+            expected: { $sum: '$expectedReturn' },
+          },
+        },
       ]),
     ]);
+
+    const stakingTotals = stackBreakdownAgg.reduce(
+      (acc, entry) => {
+        acc.totalStaked += entry.staked || 0;
+        acc.totalExpected += entry.expected || 0;
+        acc.breakdown[entry._id || 'fixed'] = {
+          staked: entry.staked || 0,
+          expectedReturn: entry.expected || 0,
+        };
+        return acc;
+      },
+      { totalStaked: 0, totalExpected: 0, breakdown: {} },
+    );
+    const stackingPlans = buildStackPlanPayload();
 
     res.json({
       wallets: {
@@ -780,14 +1041,14 @@ const getWalletAnalytics = async (req, res) => {
           balance: user?.rewardsWalletBalance || 0,
         },
         staking: {
-          staked: stakeAgg?.[0]?.staked || 0,
-          expectedReturn: stakeAgg?.[0]?.expected || 0,
-          interestRate: STAKE_INTEREST_RATE,
+          staked: stakingTotals.totalStaked,
+          expectedReturn: stakingTotals.totalExpected,
+          breakdown: stakingTotals.breakdown,
         },
       },
       portfolio: {
         tokensHeld: holding?.balance || 0,
-        tokensStaked: stakeAgg?.[0]?.staked || 0,
+        tokensStaked: stakingTotals.totalStaked,
         referralCommissions: user?.referralTotalEarned || 0,
       },
       activity: {
@@ -800,10 +1061,11 @@ const getWalletAnalytics = async (req, res) => {
           fiat: sellAgg?.[0]?.fiat || 0,
         },
         stake: {
-          tokens: stakeAgg?.[0]?.staked || 0,
-          expectedReturn: stakeAgg?.[0]?.expected || 0,
+          tokens: stakingTotals.totalStaked,
+          expectedReturn: stakingTotals.totalExpected,
         },
       },
+      stackingPlans,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -950,6 +1212,7 @@ module.exports = {
   swapMainToToken,
   stakeTokens,
   listStakes,
+  requestStakeWithdrawal,
   claimStake,
   getWalletAnalytics,
   adminListWalletTransactions,

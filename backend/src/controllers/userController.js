@@ -11,6 +11,7 @@ const StakingPosition = require('../models/StakingPosition');
 const { sendOtpForUser, verifyUserOtp } = require('../utils/otpHelpers');
 const { buildReferralTree } = require('../utils/referralTree');
 const { uploadImageBuffer, isCloudinaryConfigured } = require('../utils/cloudinary');
+const { createUserNotification } = require('../utils/notificationService');
 
 const REQUIRED_FIELDS = ['line1', 'city', 'state', 'postalCode'];
 const ADDRESS_FIELDS = [
@@ -557,6 +558,14 @@ const changePin = async (req, res) => {
     user.otp = undefined;
     await user.save();
 
+    await createUserNotification({
+      userId: user._id,
+      title: 'PIN changed',
+      message: 'Your account PIN has been updated successfully.',
+      type: 'general',
+      metadata: { action: 'pin_change' },
+    });
+
     res.json({ message: 'PIN updated' });
   } catch (error) {
     const status = error.statusCode || 500;
@@ -621,6 +630,7 @@ const addBankDetails = async (req, res) => {
     }
 
     const isUpdate = Boolean(user.bankDetails && user.bankDetails.accountNumber);
+    const bankAction = isUpdate ? 'updated' : 'added';
     user.bankDetails = {
       ...bankInput,
       verified: true,
@@ -629,6 +639,14 @@ const addBankDetails = async (req, res) => {
     };
     user.otp = undefined;
     await user.save();
+
+    await createUserNotification({
+      userId: user._id,
+      title: `Bank details ${bankAction}`,
+      message: `Your bank details have been ${bankAction}.`,
+      type: 'general',
+      metadata: { action: 'bank_details', status: bankAction },
+    });
 
     return res.status(201).json({
       message: `Bank details ${isUpdate ? 'updated' : 'added'}`,

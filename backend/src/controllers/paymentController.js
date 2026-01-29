@@ -10,6 +10,7 @@ const {
   RAZORPAY_KEY_ID,
 } = require('../utils/razorpay');
 const { getOrCreateWalletAccount } = require('../utils/walletAccount');
+const { verifyPayUResponse } = require('../utils/payu');
 const { createUserNotification } = require('../utils/notificationService');
 
 const PHONEPE_SUCCESS_CODES = ['PAYMENT_SUCCESS', 'SUCCESS'];
@@ -294,8 +295,89 @@ const handleRazorpayVerify = async (req, res) => {
   }
 };
 
+const handlePayUResponse = async (req, res) => {
+  try {
+    const payload = Object.keys(req.body || {}).length ? req.body : req.query || {};
+    const txnid = payload?.txnid;
+    const rawStatus = payload?.status || '';
+    const normalizedStatus = String(rawStatus).toLowerCase();
+
+    if (!txnid) {
+      return res.status(400).json({ message: 'txnid is required' });
+    }
+
+    const hash = payload?.hash;
+    const hashValid = verifyPayUResponse({
+      status: rawStatus,
+      txnid,
+      amount: payload?.amount,
+      productinfo: payload?.productinfo || 'Wallet top-up',
+      firstname: payload?.firstname || '',
+      email: payload?.email || '',
+      hash,
+    });
+
+    if (!hashValid) {
+      return res.status(400).json({ message: 'Invalid PayU hash' });
+    }
+
+    const walletTx = await WalletTransaction.findOne({ payuTransactionId: txnid });
+    if (!walletTx) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+
+    walletTx.status = normalizedStatus === 'success' ? 'completed' : 'failed';
+    walletTx.payuResponse = payload;
+    walletTx.payuHash = hash;
+    await walletTx.save();
+
+    if (walletTx.type === 'credit' && walletTx.category === 'topup') {
+      if (walletTx.status === 'completed') {
+        const walletQuery = walletTx.wallet ? { _id: walletTx.wallet } : { user: walletTx.user };
+        const wallet = await WalletAccount.findOneAndUpdate(
+          walletQuery,
+          {
+            $inc: {
+              balance: walletTx.amount,
+              totalCredited: walletTx.amount,
+            },
+            $setOnInsert: { user: walletTx.user },
+          },
+          { new: true, upsert: true, setDefaultsOnInsert: true },
+        );
+        await createUserNotification({
+          userId: walletTx.user,
+          title: 'Wallet top-up successful',
+          message: `Wallet credited with INR ${walletTx.amount} via PayU.`,
+          type: 'transaction',
+          metadata: { transactionId: walletTx._id },
+        });
+        return res.json({
+          status: walletTx.status,
+          transactionId: walletTx._id,
+          wallet,
+          kind: 'wallet',
+        });
+      }
+
+      await createUserNotification({
+        userId: walletTx.user,
+        title: 'Wallet top-up failed',
+        message: 'Your wallet top-up via PayU failed. Please try again.',
+        type: 'transaction',
+        metadata: { transactionId: walletTx._id },
+      });
+    }
+
+    res.json({ status: walletTx.status, transactionId: walletTx._id });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   createRazorpayWalletOrder,
   handlePhonePeCallback,
   handleRazorpayVerify,
+  handlePayUResponse,
 };
