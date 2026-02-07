@@ -11,7 +11,6 @@ const adminSignupInit = async (req, res) => {
     if (!name || !mobile) {
       return res.status(400).json({ message: 'Name and mobile are required' });
     }
-
     const {
       normalized,
       variants,

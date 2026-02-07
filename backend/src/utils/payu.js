@@ -8,7 +8,7 @@ const {
   PAYU_FAILURE_URL = 'https://your-domain.com/api/payments/payu/response',
 } = process.env;
 
-const EMPTY_UDFS = '||||||||||';
+const UDF_COUNT = 10;
 
 const formatAmount = (amount) => {
   const numeric = Number(amount);
@@ -21,15 +21,34 @@ const formatAmount = (amount) => {
 const buildRequestHash = ({ txnid, amount, productinfo, firstname, email }) => {
   if (!PAYU_KEY || !PAYU_SALT) return null;
   const formattedAmount = formatAmount(amount);
-  const hashString = `${PAYU_KEY}|${txnid}|${formattedAmount}|${productinfo}|${firstname}|${email}|${EMPTY_UDFS}|${PAYU_SALT}`;
-  return crypto.createHash('sha512').update(hashString).digest('hex');
+  const hashParts = [
+    PAYU_KEY,
+    txnid,
+    formattedAmount,
+    productinfo,
+    firstname,
+    email,
+    ...Array.from({ length: UDF_COUNT }, () => ''),
+    PAYU_SALT,
+  ];
+  return crypto.createHash('sha512').update(hashParts.join('|')).digest('hex');
 };
 
 const buildResponseHash = ({ status, txnid, amount, productinfo, firstname, email }) => {
   if (!PAYU_KEY || !PAYU_SALT) return null;
   const formattedAmount = formatAmount(amount);
-  const hashString = `${PAYU_SALT}|${status}|${EMPTY_UDFS}|${email}|${firstname}|${productinfo}|${formattedAmount}|${txnid}|${PAYU_KEY}`;
-  return crypto.createHash('sha512').update(hashString).digest('hex');
+  const hashParts = [
+    PAYU_SALT,
+    status,
+    ...Array.from({ length: UDF_COUNT }, () => ''),
+    email,
+    firstname,
+    productinfo,
+    formattedAmount,
+    txnid,
+    PAYU_KEY,
+  ];
+  return crypto.createHash('sha512').update(hashParts.join('|')).digest('hex');
 };
 
 const createPayUPaymentPayload = ({

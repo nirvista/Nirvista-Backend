@@ -221,6 +221,7 @@ const getKycDetailAdmin = async (req, res) => {
   }
 };
 
+
 module.exports = {
   submitKyc,
   getKycStatus,
