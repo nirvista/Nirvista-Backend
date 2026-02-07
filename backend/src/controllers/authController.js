@@ -10,6 +10,7 @@ const {
   getSmsDestination,
   buildMobileAliasEmail,
 } = require('../utils/mobileNormalizer');
+const { isFirebaseOtpEnabled, verifyFirebaseOtpForUser } = require('../utils/firebaseOtp');
 const { ensureActiveUser, findUserByMobile } = require('../utils/userHelpers');
 
 const OTP_TTL_MINUTES = 10;
@@ -348,7 +349,7 @@ const signupMobileInit = async (req, res) => {
 // @route   POST /api/auth/signup/verify
 // @access  Public
 const verifyOTP = async (req, res) => {
-  const { userId, otp, type, pin } = req.body;
+  const { userId, otp, type, pin, firebaseToken } = req.body;
 
   if (!userId || !otp) {
     return res.status(400).json({ message: 'User ID and OTP are required' });
@@ -361,22 +362,35 @@ const verifyOTP = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (!user.otp || !user.otp.code) {
-      return res.status(400).json({ message: 'No pending OTP found. Please request a new one.' });
+    if (firebaseToken && isFirebaseOtpEnabled()) {
+      const firebaseCheck = await verifyFirebaseOtpForUser({
+        user,
+        firebaseToken,
+        purpose: 'signup',
+      });
+      if (!firebaseCheck.ok) {
+        return res.status(400).json({ message: firebaseCheck.message });
+      }
+      user.otp = undefined;
+      user.isMobileVerified = true;
+    } else {
+      if (!user.otp || !user.otp.code) {
+        return res.status(400).json({ message: 'No pending OTP found. Please request a new one.' });
+      }
+
+      const storedChannel = normalizeChannel(user.otp.channel);
+      const requestedChannel = normalizeChannel(type);
+      const verificationChannel = requestedChannel || storedChannel;
+
+      if (user.otp.code !== otp || (user.otp.expiresAt && user.otp.expiresAt < new Date())) {
+        return res.status(400).json({ message: 'Invalid or expired OTP' });
+      }
+
+      user.otp = undefined;
+      const verifyBoth = Boolean(user.email && user.mobile);
+      if (verifyBoth || verificationChannel === 'email') user.isEmailVerified = true;
+      if (verifyBoth || verificationChannel === 'mobile') user.isMobileVerified = true;
     }
-
-    const storedChannel = normalizeChannel(user.otp.channel);
-    const requestedChannel = normalizeChannel(type);
-    const verificationChannel = requestedChannel || storedChannel;
-
-    if (user.otp.code !== otp || (user.otp.expiresAt && user.otp.expiresAt < new Date())) {
-      return res.status(400).json({ message: 'Invalid or expired OTP' });
-    }
-
-    user.otp = undefined;
-    const verifyBoth = Boolean(user.email && user.mobile);
-    if (verifyBoth || verificationChannel === 'email') user.isEmailVerified = true;
-    if (verifyBoth || verificationChannel === 'mobile') user.isMobileVerified = true;
 
     let pinSet = false;
     if (pin !== undefined && pin !== null) {
@@ -577,7 +591,7 @@ const loginMobileInit = async (req, res) => {
 // @route   POST /api/auth/login/mobile-verify
 // @access  Public
 const loginMobileVerify = async (req, res) => {
-  const { mobile, countryCode, otp } = req.body;
+  const { mobile, countryCode, otp, firebaseToken } = req.body;
 
   if (!mobile || !otp) {
     return res.status(400).json({ message: 'Mobile number and OTP are required' });
@@ -604,22 +618,35 @@ const loginMobileVerify = async (req, res) => {
       return res.status(403).json({ message: 'Mobile number is not verified' });
     }
 
-    if (!user.otp || !user.otp.code) {
-      return res.status(400).json({ message: 'No OTP pending verification' });
+    if (firebaseToken && isFirebaseOtpEnabled()) {
+      const firebaseCheck = await verifyFirebaseOtpForUser({
+        user,
+        firebaseToken,
+        purpose: 'login',
+      });
+      if (!firebaseCheck.ok) {
+        return res.status(400).json({ message: firebaseCheck.message });
+      }
+      user.otp = undefined;
+      await user.save();
+    } else {
+      if (!user.otp || !user.otp.code) {
+        return res.status(400).json({ message: 'No OTP pending verification' });
+      }
+
+      const channel = normalizeChannel(user.otp.channel || 'mobile');
+
+      if (channel !== 'mobile') {
+        return res.status(400).json({ message: 'OTP verification type mismatch' });
+      }
+
+      if (user.otp.code !== otp || (user.otp.expiresAt && user.otp.expiresAt < new Date())) {
+        return res.status(400).json({ message: 'Invalid or expired OTP' });
+      }
+
+      user.otp = undefined;
+      await user.save();
     }
-
-    const channel = normalizeChannel(user.otp.channel || 'mobile');
-
-    if (channel !== 'mobile') {
-      return res.status(400).json({ message: 'OTP verification type mismatch' });
-    }
-
-    if (user.otp.code !== otp || (user.otp.expiresAt && user.otp.expiresAt < new Date())) {
-      return res.status(400).json({ message: 'Invalid or expired OTP' });
-    }
-
-    user.otp = undefined;
-    await user.save();
 
     await getOrCreateWalletAccount(user._id);
 
@@ -639,7 +666,7 @@ const loginMobileVerify = async (req, res) => {
 // @route   POST /api/auth/login/mobile
 // @access  Public
 const loginMobile = async (req, res) => {
-  const { mobile, countryCode, otp, pin } = req.body;
+  const { mobile, countryCode, otp, pin, firebaseToken } = req.body;
 
   if (!mobile) {
     return res.status(400).json({ message: 'Mobile number is required' });
@@ -688,6 +715,28 @@ const loginMobile = async (req, res) => {
     }
 
     if (otp) {
+      if (firebaseToken && isFirebaseOtpEnabled()) {
+        const firebaseCheck = await verifyFirebaseOtpForUser({
+          user,
+          firebaseToken,
+          purpose: 'login',
+        });
+        if (!firebaseCheck.ok) {
+          return res.status(400).json({ message: firebaseCheck.message });
+        }
+        user.otp = undefined;
+        await user.save();
+        await getOrCreateWalletAccount(user._id);
+
+        return res.json({
+          _id: user._id,
+          name: user.name,
+          mobile: user.mobile,
+          hasPin: Boolean(user.pin),
+          token: generateToken(user._id),
+        });
+      }
+
       if (!user.otp || !user.otp.code) {
         return res.status(400).json({ message: 'No OTP pending verification' });
       }
@@ -787,7 +836,7 @@ const loginOtpInit = async (req, res) => {
 // @route   POST /api/auth/login/otp-verify
 // @access  Public
 const loginOtpVerify = async (req, res) => {
-  const { identifier, mobile, countryCode, otp } = req.body;
+  const { identifier, mobile, countryCode, otp, firebaseToken } = req.body;
   const input = identifier || mobile;
 
   if (!input || !otp) {
@@ -813,16 +862,29 @@ const loginOtpVerify = async (req, res) => {
     }
     if (!ensureActiveUser(user, res)) return;
 
-    if (!user.otp || !user.otp.code) {
-      return res.status(400).json({ message: 'No OTP pending verification' });
-    }
+    if (type === 'mobile' && firebaseToken && isFirebaseOtpEnabled()) {
+      const firebaseCheck = await verifyFirebaseOtpForUser({
+        user,
+        firebaseToken,
+        purpose: 'login',
+      });
+      if (!firebaseCheck.ok) {
+        return res.status(400).json({ message: firebaseCheck.message });
+      }
+      user.otp = undefined;
+      await user.save();
+    } else {
+      if (!user.otp || !user.otp.code) {
+        return res.status(400).json({ message: 'No OTP pending verification' });
+      }
 
-    if (user.otp.code !== otp || (user.otp.expiresAt && user.otp.expiresAt < new Date())) {
-      return res.status(400).json({ message: 'Invalid or expired OTP' });
-    }
+      if (user.otp.code !== otp || (user.otp.expiresAt && user.otp.expiresAt < new Date())) {
+        return res.status(400).json({ message: 'Invalid or expired OTP' });
+      }
 
-    user.otp = undefined;
-    await user.save();
+      user.otp = undefined;
+      await user.save();
+    }
 
     await getOrCreateWalletAccount(user._id);
 

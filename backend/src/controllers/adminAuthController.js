@@ -2,6 +2,7 @@ const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
 const { getOrCreateWalletAccount } = require('../utils/walletAccount');
 const { sendOtpForUser, verifyUserOtp } = require('../utils/otpHelpers');
+const { isFirebaseOtpEnabled, verifyFirebaseOtpForUser } = require('../utils/firebaseOtp');
 const { normalizeMobileNumber, getSmsDestination } = require('../utils/mobileNormalizer');
 const { findUserByMobile, ensureActiveUser } = require('../utils/userHelpers');
 
@@ -120,7 +121,7 @@ const adminLoginOtpInit = async (req, res) => {
 
 const adminLoginOtpVerify = async (req, res) => {
   try {
-    const { mobile, countryCode, otp } = req.body || {};
+    const { mobile, countryCode, otp, firebaseToken } = req.body || {};
     if (!mobile || !otp) {
       return res.status(400).json({ message: 'Mobile number and OTP are required' });
     }
@@ -132,9 +133,20 @@ const adminLoginOtpVerify = async (req, res) => {
     }
     if (!ensureActiveUser(user, res)) return;
 
-    const verification = verifyUserOtp({ user, otp, purpose: 'admin_login' });
-    if (!verification.ok) {
-      return res.status(400).json({ message: verification.message });
+    if (firebaseToken && isFirebaseOtpEnabled()) {
+      const firebaseCheck = await verifyFirebaseOtpForUser({
+        user,
+        firebaseToken,
+        purpose: 'admin_login',
+      });
+      if (!firebaseCheck.ok) {
+        return res.status(400).json({ message: firebaseCheck.message });
+      }
+    } else {
+      const verification = verifyUserOtp({ user, otp, purpose: 'admin_login' });
+      if (!verification.ok) {
+        return res.status(400).json({ message: verification.message });
+      }
     }
 
     user.otp = undefined;

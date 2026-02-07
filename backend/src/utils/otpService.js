@@ -1,6 +1,8 @@
 const nodemailer = require('nodemailer');
 const twilio = require('twilio');
 
+const OTP_MOBILE_PROVIDER = process.env.OTP_MOBILE_PROVIDER || 'twilio';
+
 const hasSMTPConfig = () =>
   process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
 
@@ -135,6 +137,10 @@ const sendOTP = async (destination, otp, type = 'email') => {
     }
     return await sendEmailOTP(destination, otp);
   } else if (type === 'mobile' || type === 'sms') {
+    if (OTP_MOBILE_PROVIDER === 'firebase') {
+      console.log(`[Firebase OTP] Skipping server SMS send for ${destination}.`);
+      return true;
+    }
     if (
       !process.env.TWILIO_ACCOUNT_SID ||
       process.env.TWILIO_ACCOUNT_SID.includes('your_twilio')
