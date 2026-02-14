@@ -9,7 +9,6 @@ const MobileChangeRequest = require('../models/MobileChangeRequest');
 const IcoHolding = require('../models/IcoHolding');
 const StakingPosition = require('../models/StakingPosition');
 const { sendOtpForUser, verifyUserOtp } = require('../utils/otpHelpers');
-const { isFirebaseOtpEnabled, verifyFirebaseOtpForUser } = require('../utils/firebaseOtp');
 const { buildReferralTree } = require('../utils/referralTree');
 const { uploadImageBuffer, isCloudinaryConfigured } = require('../utils/cloudinary');
 const { createUserNotification } = require('../utils/notificationService');
@@ -453,7 +452,7 @@ const requestActionOtp = async (req, res) => {
 
 const verifyActionOtp = async (req, res) => {
   try {
-    const { purpose, otp, firebaseToken } = req.body || {};
+    const { purpose, otp } = req.body || {};
     const normalizedPurpose = String(purpose || '').trim();
 
     if (!OTP_PURPOSES.includes(normalizedPurpose)) {
@@ -465,16 +464,7 @@ const verifyActionOtp = async (req, res) => {
     }
 
     const user = await ensureUserExists(req.user._id);
-    let otpCheck;
-    if (firebaseToken && isFirebaseOtpEnabled()) {
-      otpCheck = await verifyFirebaseOtpForUser({
-        user,
-        firebaseToken,
-        purpose: normalizedPurpose,
-      });
-    } else {
-      otpCheck = verifyUserOtp({ user, otp, purpose: normalizedPurpose });
-    }
+    const otpCheck = verifyUserOtp({ user, otp, purpose: normalizedPurpose });
 
     if (!otpCheck.ok) {
       return res.status(400).json({ message: otpCheck.message });
@@ -494,7 +484,7 @@ const verifyActionOtp = async (req, res) => {
 
 const confirmEmailChange = async (req, res) => {
   try {
-    const { otp, firebaseToken } = req.body || {};
+    const { otp } = req.body || {};
     if (!otp) {
       return res.status(400).json({ message: 'OTP is required' });
     }
@@ -503,16 +493,7 @@ const confirmEmailChange = async (req, res) => {
       return res.status(400).json({ message: 'No email change pending' });
     }
 
-    let otpCheck;
-    if (firebaseToken && isFirebaseOtpEnabled()) {
-      otpCheck = await verifyFirebaseOtpForUser({
-        user,
-        firebaseToken,
-        purpose: 'change_email',
-      });
-    } else {
-      otpCheck = verifyUserOtp({ user, otp, purpose: 'change_email' });
-    }
+    const otpCheck = verifyUserOtp({ user, otp, purpose: 'change_email' });
 
     if (!otpCheck.ok) {
       return res.status(400).json({ message: otpCheck.message });
@@ -534,7 +515,7 @@ const confirmEmailChange = async (req, res) => {
 
 const changePin = async (req, res) => {
   try {
-    const { newPin, confirmPin, otp, firebaseToken } = req.body || {};
+    const { newPin, confirmPin, otp } = req.body || {};
     const user = await ensureUserExists(req.user._id);
 
     if (!otp) {
@@ -568,16 +549,7 @@ const changePin = async (req, res) => {
       return res.status(400).json({ message: 'PIN confirmation does not match' });
     }
 
-    let otpCheck;
-    if (firebaseToken && isFirebaseOtpEnabled()) {
-      otpCheck = await verifyFirebaseOtpForUser({
-        user,
-        firebaseToken,
-        purpose: 'pin_change',
-      });
-    } else {
-      otpCheck = verifyUserOtp({ user, otp, purpose: 'pin_change' });
-    }
+    const otpCheck = verifyUserOtp({ user, otp, purpose: 'pin_change' });
 
     if (!otpCheck.ok) {
       return res.status(400).json({ message: otpCheck.message });
@@ -646,7 +618,7 @@ const addBankDetails = async (req, res) => {
   try {
 
     const user = await ensureUserExists(req.user._id);
-    const { otp, firebaseToken } = req.body || {};
+    const { otp } = req.body || {};
     const bankInput = sanitizeBankInput(req.body);
     validateBankInput(bankInput);
 
@@ -654,16 +626,7 @@ const addBankDetails = async (req, res) => {
       return res.status(400).json({ message: 'OTP is required to add or update bank details' });
     }
 
-    let otpCheck;
-    if (firebaseToken && isFirebaseOtpEnabled()) {
-      otpCheck = await verifyFirebaseOtpForUser({
-        user,
-        firebaseToken,
-        purpose: 'bank_add',
-      });
-    } else {
-      otpCheck = verifyUserOtp({ user, otp, purpose: 'bank_add' });
-    }
+    const otpCheck = verifyUserOtp({ user, otp, purpose: 'bank_add' });
 
     if (!otpCheck.ok) {
       return res.status(400).json({ message: otpCheck.message });
@@ -703,7 +666,7 @@ const addBankDetails = async (req, res) => {
 const addUpiDetails = async (req, res) => {
   try {
     const user = await ensureUserExists(req.user._id);
-    const { otp, firebaseToken } = req.body || {};
+    const { otp } = req.body || {};
     const upiId = sanitizeUpiInput(req.body);
 
     if (!upiId) {
@@ -727,16 +690,7 @@ const addUpiDetails = async (req, res) => {
       return res.status(201).json({ request, status: 'pending' });
     }
 
-    let otpCheck;
-    if (firebaseToken && isFirebaseOtpEnabled()) {
-      otpCheck = await verifyFirebaseOtpForUser({
-        user,
-        firebaseToken,
-        purpose: 'upi_add',
-      });
-    } else {
-      otpCheck = verifyUserOtp({ user, otp, purpose: 'upi_add' });
-    }
+    const otpCheck = verifyUserOtp({ user, otp, purpose: 'upi_add' });
 
     if (!otpCheck.ok) {
       return res.status(400).json({ message: otpCheck.message });

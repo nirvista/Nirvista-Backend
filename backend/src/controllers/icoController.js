@@ -8,7 +8,6 @@ const { distributeReferralCommission } = require('../utils/referralService');
 const { createOrder: createRazorpayOrder, RAZORPAY_KEY_ID } = require('../utils/razorpay');
 const { resolveStages, isSellAllowed } = require('../utils/icoStages');
 const { verifyUserOtp } = require('../utils/otpHelpers');
-const { isFirebaseOtpEnabled, verifyFirebaseOtpForUser } = require('../utils/firebaseOtp');
 const { getTokenPrice, getTokenSymbol } = require('../utils/tokenPrice');
 const User = require('../models/User');
 
@@ -252,7 +251,7 @@ const initiateIcoBuy = async (req, res) => {
 };
 
 const requestIcoSell = async (req, res) => {
-  const { tokenAmount, otp, firebaseToken } = req.body;
+  const { tokenAmount, otp } = req.body;
 
   if (!tokenAmount || Number(tokenAmount) <= 0) {
     return res.status(400).json({ message: 'Token amount is required' });
@@ -271,20 +270,9 @@ const requestIcoSell = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (firebaseToken && isFirebaseOtpEnabled()) {
-      const firebaseCheck = await verifyFirebaseOtpForUser({
-        user,
-        firebaseToken,
-        purpose: 'ico_sell',
-      });
-      if (!firebaseCheck.ok) {
-        return res.status(400).json({ message: firebaseCheck.message });
-      }
-    } else {
-      const otpCheck = verifyUserOtp({ user, otp, purpose: 'ico_sell' });
-      if (!otpCheck.ok) {
-        return res.status(400).json({ message: otpCheck.message });
-      }
+    const otpCheck = verifyUserOtp({ user, otp, purpose: 'ico_sell' });
+    if (!otpCheck.ok) {
+      return res.status(400).json({ message: otpCheck.message });
     }
 
     const kyc = await KycApplication.findOne({ user: req.user._id });

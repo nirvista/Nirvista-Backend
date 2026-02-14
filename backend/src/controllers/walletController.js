@@ -16,7 +16,6 @@ const { getOrCreateWalletAccount } = require('../utils/walletAccount');
 const { distributeReferralCommission } = require('../utils/referralService');
 const { resolveStages } = require('../utils/icoStages');
 const { verifyUserOtp } = require('../utils/otpHelpers');
-const { isFirebaseOtpEnabled, verifyFirebaseOtpForUser } = require('../utils/firebaseOtp');
 const { createUserNotification } = require('../utils/notificationService');
 const { getTokenPrice, getTokenSymbol } = require('../utils/tokenPrice');
 
@@ -508,7 +507,7 @@ const requestWalletWithdrawal = async (req, res) => {
   try {
     const amount = Number(req.body.amount);
     const payoutMethod = (req.body.payoutMethod || '').toLowerCase();
-    const { otp, firebaseToken } = req.body || {};
+    const { otp } = req.body || {};
     if (Number.isNaN(amount) || amount <= 0) {
       return res.status(400).json({ message: 'A valid amount is required' });
     }
@@ -528,20 +527,9 @@ const requestWalletWithdrawal = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (firebaseToken && isFirebaseOtpEnabled()) {
-      const firebaseCheck = await verifyFirebaseOtpForUser({
-        user,
-        firebaseToken,
-        purpose: 'withdrawal',
-      });
-      if (!firebaseCheck.ok) {
-        return res.status(400).json({ message: firebaseCheck.message });
-      }
-    } else {
-      const otpCheck = verifyUserOtp({ user, otp, purpose: 'withdrawal' });
-      if (!otpCheck.ok) {
-        return res.status(400).json({ message: otpCheck.message });
-      }
+    const otpCheck = verifyUserOtp({ user, otp, purpose: 'withdrawal' });
+    if (!otpCheck.ok) {
+      return res.status(400).json({ message: otpCheck.message });
     }
 
     await ensureKycVerified(req.user._id);
