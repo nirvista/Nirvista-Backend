@@ -32,6 +32,7 @@ const {
   reviewBankChangeRequest,
   listMobileChangeRequests,
   reviewMobileChangeRequest,
+  getReferralTreeAdminV2,
   getReferralTreeAdmin,
 } = require('../controllers/adminUserController');
 const { adminReviewKyc, getKycDetailAdmin } = require('../controllers/kycController');
@@ -68,6 +69,7 @@ router.get('/ico/transactions', listIcoTransactions);
 router.get('/transactions/recent', listRecentTransactions);
 router.get('/referrals/earnings', listReferralEarningsAdmin);
 router.patch('/referrals/earnings/:id', updateReferralEarningStatus);
+router.get('/referrals/tree', getReferralTreeAdminV2);
 router.get('/referrals/tree/:userId', getReferralTreeAdmin);
 router.get('/referrals/search', searchReferralTree);
 

@@ -53,6 +53,84 @@ const buildReferralTreePayload = async (userId, maxDepth) => {
   return tree || null;
 };
 
+const collectReferralNamesByLevel = (tree, maxDepth = 8) => {
+  if (!tree || !Array.isArray(tree.children)) {
+    return { levels: [], totalReferrals: 0 };
+  }
+
+  const levelMap = new Map();
+  const queue = tree.children.map((child) => ({ node: child, level: 1 }));
+
+  while (queue.length) {
+    const { node, level } = queue.shift();
+    if (!node || level > maxDepth) continue;
+
+    if (!levelMap.has(level)) levelMap.set(level, []);
+    levelMap.get(level).push(node.name || 'Unknown');
+
+    if (Array.isArray(node.children) && node.children.length) {
+      node.children.forEach((child) => queue.push({ node: child, level: level + 1 }));
+    }
+  }
+
+  const levels = Array.from(levelMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([level, names]) => ({ level, names }));
+
+  const totalReferrals = levels.reduce((sum, item) => sum + item.names.length, 0);
+  return { levels, totalReferrals };
+};
+
+const buildReferralForestPayload = async (maxDepth) => {
+  const users = await User.find({})
+    .select('name email mobile referralCode referredBy referralPath referralLevel createdAt')
+    .lean();
+
+  if (!users.length) return [];
+
+  const idToNode = new Map();
+  users.forEach((user) => {
+    idToNode.set(user._id.toString(), {
+      ...user,
+      depth: (user.referralPath || []).length,
+      children: [],
+    });
+  });
+
+  const roots = [];
+  idToNode.forEach((node) => {
+    if (node.referredBy && idToNode.has(node.referredBy.toString())) {
+      idToNode.get(node.referredBy.toString()).children.push(node);
+      return;
+    }
+    roots.push(node);
+  });
+
+  roots.forEach((root) => pruneReferralTree(root, maxDepth));
+  return roots;
+};
+
+const findUserForReferralTree = async (input) => {
+  const value = String(input || '').trim();
+  if (!value) return null;
+
+  if (mongoose.Types.ObjectId.isValid(value)) {
+    const byId = await User.findById(value)
+      .select('name email mobile referralCode referredBy referralPath referralLevel createdAt')
+      .lean();
+    if (byId) return byId;
+  }
+
+  const regex = new RegExp(value, 'i');
+  const user = await User.findOne({
+    $or: [{ name: regex }, { email: regex }, { mobile: regex }, { referralCode: regex }],
+  })
+    .select('name email mobile referralCode referredBy referralPath referralLevel createdAt')
+    .lean();
+
+  return user;
+};
+
 // Admin: paginated user list with KYC badge
 const listUsers = async (req, res) => {
   try {
@@ -801,21 +879,65 @@ const searchReferralTree = async (req, res) => {
       return res.status(400).json({ message: 'Query is required' });
     }
     const maxDepth = Math.min(Number(req.query.maxDepth) || 8, 8);
-    const regex = new RegExp(query, 'i');
-    const user = await User.findOne({
-      $or: [{ name: regex }, { mobile: regex }, { referralCode: regex }],
-    })
-      .select('name email mobile referralCode referredBy referralPath referralLevel createdAt')
-      .lean();
+    const user = await findUserForReferralTree(query);
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     const tree = await buildReferralTreePayload(user._id.toString(), maxDepth);
+    const referralLevels = collectReferralNamesByLevel(tree, maxDepth);
     res.json({
-      user,
-      tree: tree || {},
+      user: {
+        _id: user._id,
+        name: user.name || 'Unknown',
+      },
+      ...referralLevels,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getReferralTreeAdminV2 = async (req, res) => {
+  try {
+    const maxDepth = Math.min(Number(req.query.maxDepth) || 8, 8);
+    const query = (req.query.q || '').trim();
+    const userId = (req.query.userId || '').trim();
+
+    if (query || userId) {
+      const user = await findUserForReferralTree(query || userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const tree = await buildReferralTreePayload(user._id.toString(), maxDepth);
+      const referralLevels = collectReferralNamesByLevel(tree, maxDepth);
+      return res.json({
+        mode: 'single',
+        user: {
+          _id: user._id,
+          name: user.name || 'Unknown',
+        },
+        ...referralLevels,
+      });
+    }
+
+    const forest = await buildReferralForestPayload(maxDepth);
+    const data = forest.map((root) => {
+      const referralLevels = collectReferralNamesByLevel(root, maxDepth);
+      return {
+        user: {
+          _id: root._id,
+          name: root.name || 'Unknown',
+        },
+        ...referralLevels,
+      };
+    });
+    return res.json({
+      mode: 'all',
+      totalRoots: data.length,
+      data,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -858,5 +980,6 @@ module.exports = {
   listMobileChangeRequests,
   reviewMobileChangeRequest,
   searchReferralTree,
+  getReferralTreeAdminV2,
   getReferralTreeAdmin,
 };
