@@ -4,6 +4,14 @@ const { getOrCreateWalletAccount } = require('../utils/walletAccount');
 const { sendOtpForUser, verifyUserOtp } = require('../utils/otpHelpers');
 const { normalizeMobileNumber, getSmsDestination } = require('../utils/mobileNormalizer');
 const { findUserByMobile, ensureActiveUser } = require('../utils/userHelpers');
+const bcrypt = require('bcryptjs');
+
+// Keep this aligned with the legacy admin login accepted in authController.
+const ADMIN_LOGIN_EMAIL = 'info@nirvista.in';
+const ADMIN_LOGIN_PASSWORD = '12345678';
+
+const isHardcodedAdminLogin = (email, password) =>
+  email === ADMIN_LOGIN_EMAIL && password === ADMIN_LOGIN_PASSWORD;
 
 const adminSignupInit = async (req, res) => {
   try {
@@ -154,8 +162,87 @@ const adminLoginOtpVerify = async (req, res) => {
   }
 };
 
+const adminLoginEmail = async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    // Backward-compatible hardcoded admin bootstrap for environments using legacy login.
+    if (isHardcodedAdminLogin(normalizedEmail, password)) {
+      let user = await User.findOne({ email: normalizedEmail });
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(ADMIN_LOGIN_PASSWORD, salt);
+
+      if (!user) {
+        user = await User.create({
+          name: 'Admin',
+          email: normalizedEmail,
+          password: hashedPassword,
+          role: 'admin',
+          isEmailVerified: true,
+          isActive: true,
+        });
+      } else {
+        user.password = hashedPassword;
+        user.role = 'admin';
+        user.isEmailVerified = true;
+        user.isActive = true;
+        user.disabledAt = undefined;
+        user.disabledReason = undefined;
+        await user.save();
+      }
+
+      await getOrCreateWalletAccount(user._id);
+      return res.json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        token: generateToken(user._id),
+      });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user || !user.password) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+    if (!ensureActiveUser(user, res)) return;
+
+    if (user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
+    if (!user.isEmailVerified) {
+      return res.status(403).json({ message: 'Email not verified' });
+    }
+
+    if (!(await user.matchPassword(password))) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    await getOrCreateWalletAccount(user._id);
+
+    return res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      token: generateToken(user._id),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   adminSignupInit,
+  adminLoginEmail,
   adminLoginOtpInit,
   adminLoginOtpVerify,
 };
