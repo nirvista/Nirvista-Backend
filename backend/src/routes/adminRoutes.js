@@ -16,6 +16,7 @@ const {
   getLatestSignups,
   countUsers,
   getUserDetail,
+  getUserFinancialDetails,
   listKycApplications,
   getAdminStats,
   getTokenPriceAdmin,
@@ -59,6 +60,7 @@ router.post('/ico/price', setTokenPriceAdmin);
 router.get('/users', listUsers);
 router.get('/users/details', listUsersWithDetails);
 router.get('/users/:id', getUserDetail);
+router.get('/users/:id/financials', getUserFinancialDetails);
 router.patch('/users/:id/status', updateUserStatus);
 router.patch('/users/:id/email', updateUserEmail);
 router.patch('/users/:id/pin', updateUserPin);

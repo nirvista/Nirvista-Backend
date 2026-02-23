@@ -4,6 +4,7 @@ const {
   signupEmailInit,
   signupMobileInit,
   signupCombinedInit,
+  signupEmailPassword,
   verifyOTP,
   setupPIN,
   loginEmail,
@@ -19,6 +20,7 @@ const { protect } = require('../middleware/authMiddleware');
 // Signup
 router.post('/signup/combined-init', signupCombinedInit);
 router.post('/signup/email-init', signupEmailInit);
+router.post('/signup/email-password', signupEmailPassword);
 router.post('/signup/mobile-init', signupMobileInit);
 router.post('/signup/verify', verifyOTP);
 
@@ -27,6 +29,7 @@ router.post('/pin/setup', protect, setupPIN);
 
 // Login
 router.post('/login/email', loginEmail);
+router.post('/login/email-password', loginEmail);
 router.post('/login/mobile', loginMobile);
 router.post('/login/otp-init', loginOtpInit);
 router.post('/login/otp-verify', loginOtpVerify);

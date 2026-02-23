@@ -27,6 +27,44 @@ const buildOTP = (channel, purpose) => ({
   purpose,
 });
 
+const normalizeEmailValue = (email) => String(email || '').trim().toLowerCase();
+
+const validatePasswordConfirmation = (password, confirmPassword, { required = false } = {}) => {
+  const hasPassword = password !== undefined && password !== null && String(password) !== '';
+  const hasConfirm =
+    confirmPassword !== undefined && confirmPassword !== null && String(confirmPassword) !== '';
+
+  if (required && !hasPassword) {
+    return { ok: false, message: 'Password is required' };
+  }
+
+  if (!hasPassword && !hasConfirm) {
+    return { ok: true, provided: false };
+  }
+
+  if (!hasPassword || !hasConfirm) {
+    return { ok: false, message: 'Password and confirmPassword are required together' };
+  }
+
+  const passwordString = String(password);
+  const confirmPasswordString = String(confirmPassword);
+
+  if (passwordString.length < 6) {
+    return { ok: false, message: 'Password must be at least 6 characters long' };
+  }
+
+  if (passwordString !== confirmPasswordString) {
+    return { ok: false, message: 'Password and confirmPassword do not match' };
+  }
+
+  return { ok: true, provided: true, password: passwordString };
+};
+
+const hashPasswordValue = async (password) => {
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(String(password), salt);
+};
+
 // Normalize identifier to detect email vs mobile
 const parseIdentifier = (identifier = '', countryCode = '', fallbackMobile = '') => {
   const trimmed = String(identifier || fallbackMobile || '').trim();
@@ -84,6 +122,7 @@ const signupCombinedInit = async (req, res) => {
     mobile,
     countryCode,
     password,
+    confirmPassword,
     referralCode,
   } = req.body;
 
@@ -91,7 +130,7 @@ const signupCombinedInit = async (req, res) => {
     return res.status(400).json({ message: 'Name, email, and mobile are required' });
   }
 
-  const normalizedEmail = email.toLowerCase();
+  const normalizedEmail = normalizeEmailValue(email);
   const {
     normalized: normalizedMobile,
     variants: mobileVariants,
@@ -104,13 +143,19 @@ const signupCombinedInit = async (req, res) => {
     return res.status(400).json({ message: 'Valid mobile number is required' });
   }
 
+  const passwordCheck = validatePasswordConfirmation(password, confirmPassword, { required: false });
+  if (!passwordCheck.ok) {
+    return res.status(400).json({ message: passwordCheck.message });
+  }
+
   try {
     const existingUser = await User.findOne({
       $or: [{ email: normalizedEmail }, { mobile: { $in: mobileVariants } }],
     });
 
-    const salt = password ? await bcrypt.genSalt(10) : null;
-    const hashedPassword = password && salt ? await bcrypt.hash(password, salt) : undefined;
+    const hashedPassword = passwordCheck.provided
+      ? await hashPasswordValue(passwordCheck.password)
+      : undefined;
     const otpPayload = buildOTP('email', 'signup'); // stored as email, but OTP is sent to both channels
 
     if (existingUser) {
@@ -182,18 +227,22 @@ const signupCombinedInit = async (req, res) => {
 // @route   POST /api/auth/signup/email-init
 // @access  Public
 const signupEmailInit = async (req, res) => {
-  const { name, email, password, referralCode } = req.body;
+  const { name, email, password, confirmPassword, referralCode } = req.body;
 
   if (!name || !email || !password) {
     return res.status(400).json({ message: 'Name, email, and password are required' });
   }
 
-  const normalizedEmail = email.toLowerCase();
+  const passwordCheck = validatePasswordConfirmation(password, confirmPassword, { required: true });
+  if (!passwordCheck.ok) {
+    return res.status(400).json({ message: passwordCheck.message });
+  }
+
+  const normalizedEmail = normalizeEmailValue(email);
 
   try {
     const existingUser = await User.findOne({ email: normalizedEmail });
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await hashPasswordValue(passwordCheck.password);
     const otpPayload = buildOTP('email', 'signup');
 
     if (existingUser) {
@@ -261,7 +310,7 @@ const signupEmailInit = async (req, res) => {
 // @route   POST /api/auth/signup/mobile-init
 // @access  Public
 const signupMobileInit = async (req, res) => {
-  const { name, mobile, countryCode, referralCode } = req.body;
+  const { name, mobile, countryCode, referralCode, email, password, confirmPassword } = req.body;
 
   if (!name || !mobile || !referralCode) {
     return res.status(400).json({ message: 'Name, mobile, and referral code are required' });
@@ -279,10 +328,31 @@ const signupMobileInit = async (req, res) => {
     return res.status(400).json({ message: 'Valid mobile number is required' });
   }
 
+  const normalizedEmail = email ? normalizeEmailValue(email) : '';
+  const passwordCheck = validatePasswordConfirmation(password, confirmPassword, { required: false });
+  if (!passwordCheck.ok) {
+    return res.status(400).json({ message: passwordCheck.message });
+  }
+
+  if (normalizedEmail && !passwordCheck.provided) {
+    return res.status(400).json({ message: 'Password and confirmPassword are required when email is provided' });
+  }
+
   try {
     const existingUser = await findUserByMobile(mobile, countryCode);
     const otpPayload = buildOTP('mobile', 'signup');
     const aliasEmail = buildMobileAliasEmail(normalizedMobile);
+    const finalEmail = normalizedEmail || aliasEmail;
+    const hashedPassword = passwordCheck.provided
+      ? await hashPasswordValue(passwordCheck.password)
+      : undefined;
+
+    if (normalizedEmail) {
+      const emailOwner = await User.findOne({ email: normalizedEmail });
+      if (emailOwner && (!existingUser || emailOwner._id.toString() !== existingUser._id.toString())) {
+        return res.status(400).json({ message: 'User already exists with this email' });
+      }
+    }
 
     if (existingUser) {
       if (existingUser.isMobileVerified) {
@@ -291,10 +361,11 @@ const signupMobileInit = async (req, res) => {
 
       existingUser.name = name || existingUser.name;
       existingUser.mobile = normalizedMobile;
-      // Ensure a non-null, unique email placeholder for uniqueness indexes
-      if (!existingUser.email && aliasEmail) {
-        existingUser.email = aliasEmail;
+      // Preserve a real email if already set; otherwise use provided email or alias placeholder.
+      if (finalEmail && (!existingUser.email || String(existingUser.email).includes('@mobile.local'))) {
+        existingUser.email = finalEmail;
       }
+      if (hashedPassword) existingUser.password = hashedPassword;
       existingUser.otp = otpPayload;
 
       const ensuredCode = await ensureReferralCode(existingUser);
@@ -319,7 +390,8 @@ const signupMobileInit = async (req, res) => {
     const user = await User.create({
       name,
       mobile: normalizedMobile,
-      email: aliasEmail,
+      email: finalEmail,
+      password: hashedPassword,
       otp: otpPayload,
     });
 
@@ -344,11 +416,91 @@ const signupMobileInit = async (req, res) => {
   }
 };
 
+// @desc    Register user with Email & Password (direct signup)
+// @route   POST /api/auth/signup/email-password
+// @access  Public
+const signupEmailPassword = async (req, res) => {
+  const { name, email, password, confirmPassword, referralCode } = req.body || {};
+
+  if (!name || !email || !password || !confirmPassword) {
+    return res.status(400).json({
+      message: 'Name, email, password, and confirmPassword are required',
+    });
+  }
+
+  const passwordCheck = validatePasswordConfirmation(password, confirmPassword, { required: true });
+  if (!passwordCheck.ok) {
+    return res.status(400).json({ message: passwordCheck.message });
+  }
+
+  const normalizedEmail = normalizeEmailValue(email);
+  if (!normalizedEmail.includes('@')) {
+    return res.status(400).json({ message: 'Valid email is required' });
+  }
+
+  try {
+    let user = await User.findOne({ email: normalizedEmail });
+    const wasExistingUser = Boolean(user);
+    const hashedPassword = await hashPasswordValue(passwordCheck.password);
+
+    if (user && user.isEmailVerified) {
+      return res.status(400).json({ message: 'User already exists with this email' });
+    }
+
+    if (user) {
+      user.name = name;
+      user.email = normalizedEmail;
+      user.password = hashedPassword;
+      user.isEmailVerified = true;
+      user.isActive = true;
+      user.disabledAt = undefined;
+      user.disabledReason = undefined;
+      user.otp = undefined;
+    } else {
+      user = await User.create({
+        name,
+        email: normalizedEmail,
+        password: hashedPassword,
+        isEmailVerified: true,
+        isActive: true,
+      });
+    }
+
+    const ensuredCode = await ensureReferralCode(user);
+    if (ensuredCode) {
+      await user.save();
+    }
+
+    if (referralCode) {
+      try {
+        await applyReferralCodeOnSignup(user, referralCode);
+      } catch (err) {
+        return res.status(err.statusCode || 400).json({ message: err.message });
+      }
+    }
+
+    await user.save();
+    await getOrCreateWalletAccount(user._id);
+
+    return res.status(wasExistingUser ? 200 : 201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      mobile: user.mobile,
+      isEmailVerified: user.isEmailVerified,
+      isMobileVerified: user.isMobileVerified,
+      token: generateToken(user._id),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Verify OTP and Finalize Signup
 // @route   POST /api/auth/signup/verify
 // @access  Public
 const verifyOTP = async (req, res) => {
-  const { userId, otp, type, pin } = req.body;
+  const { userId, otp, type, pin, email, password, confirmPassword } = req.body;
 
   if (!userId || !otp) {
     return res.status(400).json({ message: 'User ID and OTP are required' });
@@ -373,6 +525,21 @@ const verifyOTP = async (req, res) => {
       return res.status(400).json({ message: 'Invalid or expired OTP' });
     }
 
+    const normalizedOptionalEmail = email ? normalizeEmailValue(email) : '';
+    const passwordCheck = validatePasswordConfirmation(password, confirmPassword, { required: false });
+    if (!passwordCheck.ok) {
+      return res.status(400).json({ message: passwordCheck.message });
+    }
+    if (normalizedOptionalEmail && !passwordCheck.provided) {
+      return res.status(400).json({ message: 'Password and confirmPassword are required when email is provided' });
+    }
+    if (normalizedOptionalEmail) {
+      const existingEmailUser = await User.findOne({ email: normalizedOptionalEmail });
+      if (existingEmailUser && existingEmailUser._id.toString() !== user._id.toString()) {
+        return res.status(400).json({ message: 'Email already in use' });
+      }
+    }
+
     user.otp = undefined;
     const verifyBoth = Boolean(user.email && user.mobile);
     if (verifyBoth || verificationChannel === 'email') user.isEmailVerified = true;
@@ -394,6 +561,18 @@ const verifyOTP = async (req, res) => {
       if (aliasEmail) {
         user.email = aliasEmail;
       }
+    }
+
+    if (normalizedOptionalEmail) {
+      user.email = normalizedOptionalEmail;
+      // Mobile OTP does not prove email ownership.
+      if (verificationChannel !== 'email') {
+        user.isEmailVerified = false;
+      }
+    }
+
+    if (passwordCheck.provided) {
+      user.password = await hashPasswordValue(passwordCheck.password);
     }
 
     await ensureReferralCode(user);
@@ -912,6 +1091,7 @@ module.exports = {
   signupCombinedInit,
   signupEmailInit,
   signupMobileInit,
+  signupEmailPassword,
   verifyOTP,
   setupPIN,
   loginEmail,

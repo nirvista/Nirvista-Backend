@@ -287,6 +287,113 @@ const getUserDetail = async (req, res) => {
   }
 };
 
+// Admin: focused financial snapshot for one user (wallet + token holdings + aggregates)
+const getUserFinancialDetails = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
+
+    const userId = new mongoose.Types.ObjectId(req.params.id);
+    const user = await User.findById(userId).select('name email mobile role referralCode isActive createdAt');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const [wallet, holding, walletTxAgg, icoTxAgg] = await Promise.all([
+      WalletAccount.findOne({ user: userId }),
+      IcoHolding.findOne({ user: userId }),
+      WalletTransaction.aggregate([
+        {
+          $match: {
+            user: userId,
+            status: { $in: ['processed', 'completed'] },
+          },
+        },
+        {
+          $group: {
+            _id: '$type',
+            amount: { $sum: '$amount' },
+          },
+        },
+      ]),
+      IcoTransaction.aggregate([
+        {
+          $match: {
+            user: userId,
+            status: 'completed',
+          },
+        },
+        {
+          $group: {
+            _id: '$type',
+            tokenAmount: { $sum: '$tokenAmount' },
+            fiatAmount: { $sum: '$fiatAmount' },
+          },
+        },
+      ]),
+    ]);
+
+    const walletTotals = walletTxAgg.reduce(
+      (acc, row) => {
+        if (row._id === 'credit') acc.credited = row.amount || 0;
+        if (row._id === 'debit') acc.debited = row.amount || 0;
+        return acc;
+      },
+      { credited: 0, debited: 0 },
+    );
+
+    const icoTotals = icoTxAgg.reduce(
+      (acc, row) => {
+        if (row._id === 'buy') {
+          acc.buyTokens = row.tokenAmount || 0;
+          acc.buyFiat = row.fiatAmount || 0;
+        }
+        if (row._id === 'sell') {
+          acc.sellTokens = row.tokenAmount || 0;
+          acc.sellFiat = row.fiatAmount || 0;
+        }
+        return acc;
+      },
+      { buyTokens: 0, buyFiat: 0, sellTokens: 0, sellFiat: 0 },
+    );
+
+    const tokenPrice = getTokenPrice();
+    const tokenSymbol = getTokenSymbol();
+    const tokenBalance = holding?.balance || 0;
+
+    return res.json({
+      user,
+      wallet: {
+        balance: wallet?.balance || 0,
+        currency: wallet?.currency || 'INR',
+        pendingWithdrawals: wallet?.pendingWithdrawals || 0,
+        totalCredited: wallet?.totalCredited || 0,
+        totalDebited: wallet?.totalDebited || 0,
+        creditedFromTransactions: walletTotals.credited,
+        debitedFromTransactions: walletTotals.debited,
+      },
+      tokens: {
+        tokenSymbol,
+        currentPrice: tokenPrice,
+        balance: tokenBalance,
+        averageBuyPrice: holding?.averageBuyPrice || 0,
+        valuation: tokenBalance * tokenPrice,
+      },
+      icoSummary: {
+        totalBuyTokens: icoTotals.buyTokens,
+        totalBuyFiat: icoTotals.buyFiat,
+        totalSellTokens: icoTotals.sellTokens,
+        totalSellFiat: icoTotals.sellFiat,
+        netTokens: icoTotals.buyTokens - icoTotals.sellTokens,
+        netFiatFlow: icoTotals.buyFiat - icoTotals.sellFiat,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 const updateUserStatus = async (req, res) => {
   try {
     const { isActive, reason } = req.body || {};
@@ -964,6 +1071,7 @@ module.exports = {
   getLatestSignups,
   countUsers,
   getUserDetail,
+  getUserFinancialDetails,
   listKycApplications,
   getAdminStats,
   getTokenPriceAdmin,
