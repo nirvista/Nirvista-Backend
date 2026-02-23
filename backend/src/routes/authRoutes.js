@@ -17,6 +17,29 @@ const {
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
+// Debug-friendly route listing to confirm deployed auth routes
+router.get('/', (_req, res) => {
+  res.json({
+    message: 'Auth routes available',
+    routes: [
+      'POST /api/auth/signup/combined-init',
+      'POST /api/auth/signup/email-init',
+      'POST /api/auth/signup/email-password',
+      'POST /api/auth/signup/mobile-init',
+      'POST /api/auth/signup/verify',
+      'POST /api/auth/pin/setup',
+      'POST /api/auth/login/email',
+      'POST /api/auth/login/email-password',
+      'POST /api/auth/login/mobile',
+      'POST /api/auth/login/otp-init',
+      'POST /api/auth/login/otp-verify',
+      'POST /api/auth/login/mobile-init',
+      'POST /api/auth/login/mobile-verify',
+      'POST /api/auth/login/pin',
+    ],
+  });
+});
+
 // Signup
 router.post('/signup/combined-init', signupCombinedInit);
 router.post('/signup/email-init', signupEmailInit);
