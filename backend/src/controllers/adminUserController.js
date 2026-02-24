@@ -12,6 +12,8 @@ const bcrypt = require('bcryptjs');
 const { buildReferralTree } = require('../utils/referralTree');
 const { createUserNotification } = require('../utils/notificationService');
 const { getTokenPrice, setTokenPrice, getTokenSymbol } = require('../utils/tokenPrice');
+const { ensureReferralCode, applyReferralCodeOnSignup } = require('../utils/referralService');
+const { getOrCreateWalletAccount } = require('../utils/walletAccount');
 
 const pruneReferralTree = (node, maxDepth) => {
   if (!node || !node.children) return;
@@ -129,6 +131,87 @@ const findUserForReferralTree = async (input) => {
     .lean();
 
   return user;
+};
+
+const createUserByAdmin = async (req, res) => {
+  try {
+    const { name, email, password, confirmPassword, referralCode } = req.body || {};
+
+    if (!name || !email || !password || !confirmPassword) {
+      return res.status(400).json({
+        message: 'name, email, password, and confirmPassword are required',
+      });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    if (!normalizedEmail.includes('@')) {
+      return res.status(400).json({ message: 'Valid email is required' });
+    }
+
+    const passwordString = String(password);
+    const confirmPasswordString = String(confirmPassword);
+
+    if (passwordString.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+    }
+
+    if (passwordString !== confirmPasswordString) {
+      return res.status(400).json({ message: 'Password and confirmPassword do not match' });
+    }
+
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists with this email' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(passwordString, salt);
+
+    const user = await User.create({
+      name: String(name).trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
+      role: 'user',
+      isActive: true,
+      isEmailVerified: true,
+      otp: undefined,
+    });
+
+    const ensuredCode = await ensureReferralCode(user);
+    if (ensuredCode) {
+      await user.save();
+    }
+
+    if (referralCode) {
+      try {
+        await applyReferralCodeOnSignup(user, referralCode);
+      } catch (err) {
+        await User.findByIdAndDelete(user._id);
+        return res.status(err.statusCode || 400).json({ message: err.message });
+      }
+    }
+
+    await user.save();
+    await getOrCreateWalletAccount(user._id);
+
+    return res.status(201).json({
+      message: 'User created successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        referralCode: user.referralCode,
+        referredBy: user.referredBy,
+        isActive: user.isActive,
+        isEmailVerified: user.isEmailVerified,
+        isMobileVerified: user.isMobileVerified,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
 };
 
 // Admin: paginated user list with KYC badge
@@ -1066,6 +1149,7 @@ const getReferralTreeAdmin = async (req, res) => {
 };
 
 module.exports = {
+  createUserByAdmin,
   listUsers,
   listUsersWithDetails,
   getLatestSignups,

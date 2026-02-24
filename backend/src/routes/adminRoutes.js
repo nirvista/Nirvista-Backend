@@ -11,6 +11,7 @@ const {
   deleteProduct,
 } = require('../controllers/adminController');
 const {
+  createUserByAdmin,
   listUsers,
   listUsersWithDetails,
   getLatestSignups,
@@ -57,6 +58,8 @@ router.get('/ico/price', getTokenPriceAdmin);
 router.post('/ico/price', setTokenPriceAdmin);
 
 // Users & KYC
+router.post('/usercreate', createUserByAdmin);
+router.post('/users', createUserByAdmin);
 router.get('/users', listUsers);
 router.get('/users/details', listUsersWithDetails);
 router.get('/users/:id', getUserDetail);
