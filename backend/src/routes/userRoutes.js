@@ -6,6 +6,7 @@ const {
   deleteAddress,
   setDefaultAddress,
   getProfile,
+  getActivationStatus,
   updateProfileName,
   uploadProfileImage,
   getOnboardingStatus,
@@ -38,6 +39,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get('/profile', getProfile);
+router.get('/activation-status', getActivationStatus);
 router.patch('/profile/name', updateProfileName);
 router.post('/profile/image', singleImageUpload('document'), uploadProfileImage);
 router.get('/onboarding-status', getOnboardingStatus);

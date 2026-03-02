@@ -6,6 +6,7 @@ const {
   RAZORPAY_KEY_SECRET = '',
   RAZORPAY_BASE_URL = 'https://api.razorpay.com',
 } = process.env;
+const RAZORPAY_ALLOW_MOCK = String(process.env.RAZORPAY_ALLOW_MOCK || 'false').toLowerCase() === 'true';
 
 const ORDERS_ENDPOINT = '/v1/orders';
 
@@ -15,13 +16,18 @@ const authHeader = () => {
   return `Basic ${token}`;
 };
 
+const isRazorpayConfigured = () => Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
+
 const createOrder = ({
   amount,
   currency = 'INR',
   receipt,
   notes,
 }) => new Promise((resolve, reject) => {
-  if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+  if (!isRazorpayConfigured()) {
+    if (!RAZORPAY_ALLOW_MOCK) {
+      return reject(new Error('Razorpay is not configured on server'));
+    }
     return resolve({
       mock: true,
       id: `order_${receipt || Date.now()}`,
@@ -76,7 +82,7 @@ const createOrder = ({
 
 const verifySignature = ({ orderId, paymentId, signature }) => {
   if (!orderId || !paymentId || !signature) return false;
-  if (!RAZORPAY_KEY_SECRET) return true; // in mock mode, skip strict check
+  if (!RAZORPAY_KEY_SECRET) return RAZORPAY_ALLOW_MOCK; // in explicit mock mode only
   const body = `${orderId}|${paymentId}`;
   const expected = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET).update(body).digest('hex');
   return expected === signature;
@@ -86,4 +92,5 @@ module.exports = {
   createOrder,
   verifySignature,
   RAZORPAY_KEY_ID,
+  isRazorpayConfigured,
 };

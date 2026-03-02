@@ -16,6 +16,7 @@ const {
   listUsersWithDetails,
   getLatestSignups,
   countUsers,
+  setUserManualActivation,
   getUserDetail,
   getUserFinancialDetails,
   listKycApplications,
@@ -65,6 +66,7 @@ router.get('/users/details', listUsersWithDetails);
 router.get('/users/:id', getUserDetail);
 router.get('/users/:id/financials', getUserFinancialDetails);
 router.patch('/users/:id/status', updateUserStatus);
+router.patch('/users/:id/activation/manual', setUserManualActivation);
 router.patch('/users/:id/email', updateUserEmail);
 router.patch('/users/:id/pin', updateUserPin);
 router.get('/kyc', listKycApplications);

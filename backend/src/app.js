@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const connectDB = require('./config/db');
+const { connectDB, isDbConnected } = require('./config/db');
 
 // Load env vars (if not loaded in server.js, but good to have here or there)
 // dotenv.config() is usually called in server.js
@@ -54,6 +54,22 @@ app.get('/health', (req, res) => {
 app.get('/api/health', (req, res) => {
   // Mirror /health for platforms or clients that prefix routes with /api
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Warm-up endpoint for mobile apps: hit this on app launch to wake server and DB.
+app.get('/api/warmup', async (_req, res) => {
+  const dbReady = isDbConnected();
+  if (!dbReady) {
+    connectDB().catch((error) => {
+      console.error('Warmup DB connect failed', error.message);
+    });
+  }
+
+  res.status(200).json({
+    status: 'warming',
+    dbReady,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Define Routes

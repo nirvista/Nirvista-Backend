@@ -8,10 +8,12 @@ const {
   verifySignature: verifyRazorpaySignature,
   createOrder: createRazorpayOrder,
   RAZORPAY_KEY_ID,
+  isRazorpayConfigured,
 } = require('../utils/razorpay');
 const { getOrCreateWalletAccount } = require('../utils/walletAccount');
 const { verifyPayUResponse } = require('../utils/payu');
 const { createUserNotification } = require('../utils/notificationService');
+const { syncUserActivationTimestamp } = require('../utils/activationPolicy');
 
 const PHONEPE_SUCCESS_CODES = ['PAYMENT_SUCCESS', 'SUCCESS'];
 
@@ -22,6 +24,12 @@ const createRazorpayWalletOrder = async (req, res) => {
 
     if (!numericAmount || numericAmount <= 0) {
       return res.status(400).json({ message: 'Valid amount is required' });
+    }
+
+    if (!isRazorpayConfigured()) {
+      return res.status(503).json({
+        message: 'Razorpay is not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.',
+      });
     }
 
     const normalizedCurrency = String(currency || 'INR').toUpperCase();
@@ -167,6 +175,7 @@ const handlePhonePeCallback = async (req, res) => {
             },
             { upsert: true, setDefaultsOnInsert: true },
           );
+          await syncUserActivationTimestamp(walletTransaction.user);
         }
 
         await createUserNotification({
@@ -279,6 +288,7 @@ const handleRazorpayVerify = async (req, res) => {
         },
         { new: true, upsert: true, setDefaultsOnInsert: true },
       );
+      await syncUserActivationTimestamp(walletTx.user);
       await createUserNotification({
         userId: walletTx.user,
         title: 'Wallet top-up successful',
@@ -345,6 +355,7 @@ const handlePayUResponse = async (req, res) => {
           },
           { new: true, upsert: true, setDefaultsOnInsert: true },
         );
+        await syncUserActivationTimestamp(walletTx.user);
         await createUserNotification({
           userId: walletTx.user,
           title: 'Wallet top-up successful',

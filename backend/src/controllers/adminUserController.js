@@ -14,6 +14,11 @@ const { createUserNotification } = require('../utils/notificationService');
 const { getTokenPrice, setTokenPrice, getTokenSymbol } = require('../utils/tokenPrice');
 const { ensureReferralCode, applyReferralCodeOnSignup } = require('../utils/referralService');
 const { getOrCreateWalletAccount } = require('../utils/walletAccount');
+const {
+  resolveActivationStatusMap,
+  resolveGlobalActivationCounts,
+  resolveUserActivationStatus,
+} = require('../utils/activationPolicy');
 
 const pruneReferralTree = (node, maxDepth) => {
   if (!node || !node.children) return;
@@ -42,6 +47,16 @@ const attachKycStatus = (users, kycMap, statusFilter) => {
   if (!statusFilter) return mapped;
   return mapped.filter((user) => user.kycStatus === statusFilter);
 };
+
+const attachActivationStatus = (users, activationMap) =>
+  users.map((user) => {
+    const activationStatus = activationMap.get(user._id.toString()) || null;
+    return {
+      ...user,
+      activationStatus,
+      userActivationStatus: activationStatus?.binaryStatus || 'inactive',
+    };
+  });
 
 const buildReferralTreePayload = async (userId, maxDepth) => {
   const users = await User.find({
@@ -248,7 +263,9 @@ const listUsers = async (req, res) => {
 
     const userIds = users.map((u) => u._id);
     const kycMap = await buildKycStatusMap(userIds, kycStatus);
-    const data = attachKycStatus(users, kycMap, kycStatus);
+    const dataWithKyc = attachKycStatus(users, kycMap, kycStatus);
+    const activationMap = await resolveActivationStatusMap(dataWithKyc.map((u) => u._id));
+    const data = attachActivationStatus(dataWithKyc, activationMap);
     const totalForResponse = kycStatus ? data.length : total;
     res.json({
       data,
@@ -266,10 +283,65 @@ const listUsers = async (req, res) => {
 
 const countUsers = async (_req, res) => {
   try {
-    const total = await User.countDocuments();
-    res.json({ total });
+    const [total, userAccounts, adminAccounts] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ role: 'user' }),
+      User.countDocuments({ role: 'admin' }),
+    ]);
+    const activation = await resolveGlobalActivationCounts();
+    res.json({
+      total,
+      userAccounts,
+      adminAccounts,
+      activation,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+const setUserManualActivation = async (req, res) => {
+  try {
+    const { forceActive, note } = req.body || {};
+    if (forceActive !== true) {
+      return res.status(400).json({ message: 'forceActive must be true' });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (user.role === 'admin') {
+      return res.status(400).json({ message: 'Manual activation is only for user accounts' });
+    }
+
+    user.manualActivation = {
+      forceActive: true,
+      setBy: req.user._id,
+      setAt: new Date(),
+      note: note ? String(note).trim() : undefined,
+    };
+    if (!user.activatedAt) {
+      user.activatedAt = new Date();
+    }
+    await user.save();
+
+    const activationStatus = await resolveUserActivationStatus(user._id);
+    await createUserNotification({
+      userId: user._id,
+      title: 'Account activated by admin',
+      message: 'Your activation status has been set to active by admin.',
+      type: 'admin',
+      metadata: { manualActivation: true, forceActive: true },
+    });
+
+    return res.json({
+      id: user._id,
+      manualActivation: user.manualActivation,
+      activationStatus,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -284,7 +356,9 @@ const getLatestSignups = async (req, res) => {
 
     const userIds = users.map((u) => u._id);
     const kycMap = await buildKycStatusMap(userIds);
-    const data = attachKycStatus(users, kycMap);
+    const dataWithKyc = attachKycStatus(users, kycMap);
+    const activationMap = await resolveActivationStatusMap(dataWithKyc.map((u) => u._id));
+    const data = attachActivationStatus(dataWithKyc, activationMap);
 
     res.json({ data });
   } catch (error) {
@@ -310,7 +384,9 @@ const listUsersWithDetails = async (req, res) => {
 
     const userIds = users.map((u) => u._id);
     const kycMap = await buildKycStatusMap(userIds);
-    const data = attachKycStatus(users, kycMap);
+    const dataWithKyc = attachKycStatus(users, kycMap);
+    const activationMap = await resolveActivationStatusMap(dataWithKyc.map((u) => u._id));
+    const data = attachActivationStatus(dataWithKyc, activationMap);
 
     res.json({
       data,
@@ -338,10 +414,11 @@ const getUserDetail = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const [kyc, wallet, holding] = await Promise.all([
+    const [kyc, wallet, holding, activationStatus] = await Promise.all([
       KycApplication.findOne({ user: user._id }),
       WalletAccount.findOne({ user: user._id }),
       IcoHolding.findOne({ user: user._id }),
+      resolveUserActivationStatus(user._id),
     ]);
 
     const price = getTokenPrice();
@@ -364,6 +441,7 @@ const getUserDetail = async (req, res) => {
             tokenSymbol,
           }
         : { balance: 0, valuation: 0, tokenSymbol },
+      activationStatus,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -383,7 +461,7 @@ const getUserFinancialDetails = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const [wallet, holding, walletTxAgg, icoTxAgg] = await Promise.all([
+    const [wallet, holding, walletTxAgg, icoTxAgg, activationStatus] = await Promise.all([
       WalletAccount.findOne({ user: userId }),
       IcoHolding.findOne({ user: userId }),
       WalletTransaction.aggregate([
@@ -415,6 +493,7 @@ const getUserFinancialDetails = async (req, res) => {
           },
         },
       ]),
+      resolveUserActivationStatus(userId),
     ]);
 
     const walletTotals = walletTxAgg.reduce(
@@ -471,6 +550,7 @@ const getUserFinancialDetails = async (req, res) => {
         netTokens: icoTotals.buyTokens - icoTotals.sellTokens,
         netFiatFlow: icoTotals.buyFiat - icoTotals.sellFiat,
       },
+      activationStatus,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -1154,6 +1234,7 @@ module.exports = {
   listUsersWithDetails,
   getLatestSignups,
   countUsers,
+  setUserManualActivation,
   getUserDetail,
   getUserFinancialDetails,
   listKycApplications,

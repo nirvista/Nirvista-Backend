@@ -33,6 +33,6 @@ services:
 cronJobs:
   - name: keep-alive
     schedule: "*/5 * * * *"
-    command: "curl -s https://ico-backend.onrender.com/health >/tmp/keep-alive.log && echo \"keep-alive $(date -Is)\" >> /tmp/keep-alive.log"
+    command: "curl -sf https://ico-backend.onrender.com/api/warmup >/tmp/keep-alive.log && echo \"keep-alive $(date -Is)\" >> /tmp/keep-alive.log"
     env:
       NODE_ENV: production

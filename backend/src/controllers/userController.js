@@ -12,6 +12,7 @@ const { sendOtpForUser, verifyUserOtp } = require('../utils/otpHelpers');
 const { buildReferralTree } = require('../utils/referralTree');
 const { uploadImageBuffer, isCloudinaryConfigured } = require('../utils/cloudinary');
 const { createUserNotification } = require('../utils/notificationService');
+const { resolveUserActivationStatus } = require('../utils/activationPolicy');
 
 const REQUIRED_FIELDS = ['line1', 'city', 'state', 'postalCode'];
 const ADDRESS_FIELDS = [
@@ -271,13 +272,14 @@ const setDefaultAddress = async (req, res) => {
 const getProfile = async (req, res) => {
   try {
     const user = await ensureUserExists(req.user._id);
-    const [kyc, holding, stakingAgg] = await Promise.all([
+    const [kyc, holding, stakingAgg, activationStatus] = await Promise.all([
       KycApplication.findOne({ user: req.user._id }).select('status selfieUrl'),
       IcoHolding.findOne({ user: req.user._id }),
       StakingPosition.aggregate([
         { $match: { user: new mongoose.Types.ObjectId(req.user._id) } },
         { $group: { _id: null, stakedBalance: { $sum: '$tokenAmount' } } },
       ]),
+      resolveUserActivationStatus(req.user._id),
     ]);
 
     const kycStatus = kyc ? kyc.status : 'not_submitted';
@@ -305,6 +307,7 @@ const getProfile = async (req, res) => {
         level: accountLevel,
         status: accountStatus,
       },
+      activationStatus,
       wallets: {
         token: holding?.balance || 0,
         referral: user.referralWalletBalance || 0,
@@ -314,6 +317,16 @@ const getProfile = async (req, res) => {
       bankDetails: user.bankDetails || null,
       upiDetails: user.upiDetails || null,
     });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    res.status(status).json({ message: error.message });
+  }
+};
+
+const getActivationStatus = async (req, res) => {
+  try {
+    const activationStatus = await resolveUserActivationStatus(req.user._id);
+    res.json({ activationStatus });
   } catch (error) {
     const status = error.statusCode || 500;
     res.status(status).json({ message: error.message });
@@ -873,6 +886,7 @@ module.exports = {
   deleteAddress,
   setDefaultAddress,
   getProfile,
+  getActivationStatus,
   updateProfileName,
   uploadProfileImage,
   getOnboardingStatus,

@@ -86,6 +86,23 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  manualActivation: {
+    forceActive: {
+      type: Boolean,
+      default: false,
+    },
+    setBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    setAt: {
+      type: Date,
+    },
+    note: {
+      type: String,
+      trim: true,
+    },
+  },
   role: {
     type: String,
     enum: ['user', 'admin'],

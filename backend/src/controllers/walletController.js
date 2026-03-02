@@ -10,14 +10,16 @@ const { createPhonePePaymentPayload } = require('../utils/phonePe');
 const {
   createOrder: createRazorpayOrder,
   RAZORPAY_KEY_ID,
+  isRazorpayConfigured,
 } = require('../utils/razorpay');
-const { createPayUPaymentPayload } = require('../utils/payu');
+const { createPayUPaymentPayload, isPayUConfigured } = require('../utils/payu');
 const { getOrCreateWalletAccount } = require('../utils/walletAccount');
 const { distributeReferralCommission } = require('../utils/referralService');
 const { resolveStages } = require('../utils/icoStages');
 const { verifyUserOtp } = require('../utils/otpHelpers');
 const { createUserNotification } = require('../utils/notificationService');
 const { getTokenPrice, getTokenSymbol } = require('../utils/tokenPrice');
+const { syncUserActivationTimestamp } = require('../utils/activationPolicy');
 
 const CALLBACK_URL =
   process.env.PHONEPE_CALLBACK_URL ||
@@ -376,6 +378,18 @@ const initiateWalletTopup = async (req, res) => {
     const method = (req.body.paymentMethod || '').toLowerCase();
     const useRazorpay = method === 'razorpay';
     const usePayU = method === 'payu';
+
+    if (useRazorpay && !isRazorpayConfigured()) {
+      return res.status(503).json({
+        message: 'Razorpay is not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.',
+      });
+    }
+
+    if (usePayU && !isPayUConfigured()) {
+      return res.status(503).json({
+        message: 'PayU is not configured. Set PAYU_KEY and PAYU_SALT.',
+      });
+    }
 
     const transaction = await WalletTransaction.create({
       user: req.user._id,
@@ -1170,6 +1184,14 @@ const adminUpdateWalletTransaction = async (req, res) => {
           await wallet.save();
         }
       }
+    }
+
+    if (
+      status &&
+      ['processed', 'completed'].includes(status) &&
+      ['credit', 'debit'].includes(transaction.type)
+    ) {
+      await syncUserActivationTimestamp(transaction.user);
     }
 
     if (adminNote !== undefined) {

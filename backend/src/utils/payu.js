@@ -7,8 +7,10 @@ const {
   PAYU_SUCCESS_URL = 'https://your-domain.com/api/payments/payu/response',
   PAYU_FAILURE_URL = 'https://your-domain.com/api/payments/payu/response',
 } = process.env;
+const PAYU_ALLOW_MOCK = String(process.env.PAYU_ALLOW_MOCK || 'false').toLowerCase() === 'true';
 
 const UDF_COUNT = 10;
+const isPayUConfigured = () => Boolean(PAYU_KEY && PAYU_SALT);
 
 const formatAmount = (amount) => {
   const numeric = Number(amount);
@@ -61,6 +63,10 @@ const createPayUPaymentPayload = ({
   successUrl,
   failureUrl,
 }) => {
+  if (!isPayUConfigured() && !PAYU_ALLOW_MOCK) {
+    throw new Error('PayU is not configured on server');
+  }
+
   const formattedAmount = formatAmount(amount);
   const payload = {
     key: PAYU_KEY,
@@ -94,8 +100,8 @@ const verifyPayUResponse = ({ status, txnid, amount, productinfo, firstname, ema
   if (!hash) return false;
   const expected = buildResponseHash({ status, txnid, amount, productinfo, firstname, email });
   if (!expected) {
-    // allow auto approvals when PAYU credentials are missing
-    return true;
+    // allow auto approvals only in explicit mock mode
+    return PAYU_ALLOW_MOCK;
   }
   return expected === hash;
 };
@@ -103,4 +109,5 @@ const verifyPayUResponse = ({ status, txnid, amount, productinfo, firstname, ema
 module.exports = {
   createPayUPaymentPayload,
   verifyPayUResponse,
+  isPayUConfigured,
 };
