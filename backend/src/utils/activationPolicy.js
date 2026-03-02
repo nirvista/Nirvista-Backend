@@ -24,9 +24,12 @@ const buildActivationStatus = ({
   let status = 'never_activated';
   let reason = `First qualifying transaction of INR ${MIN_ACTIVATION_AMOUNT} is pending`;
 
-  if (manualOverride?.forceActive) {
+  if (manualOverride?.overrideStatus === 'active' || manualOverride?.forceActive) {
     status = 'active';
     reason = 'Activated manually by admin';
+  } else if (manualOverride?.overrideStatus === 'inactive') {
+    status = 'inactive';
+    reason = 'Deactivated manually by admin';
   } else if (firstActivatedAt) {
     if (currentMonthQualified) {
       status = 'active';
@@ -43,9 +46,12 @@ const buildActivationStatus = ({
     binaryStatus: status === 'active' ? 'active' : 'inactive',
     isActive: status === 'active',
     isActivatedEver: Boolean(firstActivatedAt || manualOverride?.forceActive),
-    isManuallyActivated: Boolean(manualOverride?.forceActive),
-    manualActivation: manualOverride?.forceActive
+    isManuallyActivated: Boolean(manualOverride?.overrideStatus || manualOverride?.forceActive),
+    manualActivation: (manualOverride?.overrideStatus || manualOverride?.forceActive)
       ? {
+          overrideStatus:
+            manualOverride?.overrideStatus ||
+            (manualOverride?.forceActive ? 'active' : null),
           setAt: manualOverride?.setAt || null,
           setBy: manualOverride?.setBy || null,
           note: manualOverride?.note || null,

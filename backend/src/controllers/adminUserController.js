@@ -302,9 +302,21 @@ const countUsers = async (_req, res) => {
 
 const setUserManualActivation = async (req, res) => {
   try {
-    const { forceActive, note } = req.body || {};
-    if (forceActive !== true) {
-      return res.status(400).json({ message: 'forceActive must be true' });
+    const { forceActive, status, note } = req.body || {};
+    let targetStatus = null;
+
+    if (status) {
+      const normalizedStatus = String(status).trim().toLowerCase();
+      if (!['active', 'inactive'].includes(normalizedStatus)) {
+        return res.status(400).json({ message: 'status must be active or inactive' });
+      }
+      targetStatus = normalizedStatus;
+    } else if (forceActive === true) {
+      targetStatus = 'active';
+    } else if (forceActive === false) {
+      targetStatus = 'inactive';
+    } else {
+      return res.status(400).json({ message: 'Provide status (active/inactive)' });
     }
 
     const user = await User.findById(req.params.id);
@@ -316,12 +328,13 @@ const setUserManualActivation = async (req, res) => {
     }
 
     user.manualActivation = {
-      forceActive: true,
+      overrideStatus: targetStatus,
+      forceActive: targetStatus === 'active',
       setBy: req.user._id,
       setAt: new Date(),
       note: note ? String(note).trim() : undefined,
     };
-    if (!user.activatedAt) {
+    if (targetStatus === 'active' && !user.activatedAt) {
       user.activatedAt = new Date();
     }
     await user.save();
@@ -329,10 +342,13 @@ const setUserManualActivation = async (req, res) => {
     const activationStatus = await resolveUserActivationStatus(user._id);
     await createUserNotification({
       userId: user._id,
-      title: 'Account activated by admin',
-      message: 'Your activation status has been set to active by admin.',
+      title: targetStatus === 'active' ? 'Account activated by admin' : 'Account deactivated by admin',
+      message:
+        targetStatus === 'active'
+          ? 'Your activation status has been set to active by admin.'
+          : 'Your activation status has been set to inactive by admin.',
       type: 'admin',
-      metadata: { manualActivation: true, forceActive: true },
+      metadata: { manualActivation: true, status: targetStatus },
     });
 
     return res.json({

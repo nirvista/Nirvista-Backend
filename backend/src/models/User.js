@@ -87,6 +87,11 @@ const userSchema = new mongoose.Schema({
     trim: true,
   },
   manualActivation: {
+    overrideStatus: {
+      type: String,
+      enum: ['active', 'inactive', null],
+      default: null,
+    },
     forceActive: {
       type: Boolean,
       default: false,
