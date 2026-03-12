@@ -14,6 +14,7 @@ const { createUserNotification } = require('../utils/notificationService');
 const { getTokenPrice, setTokenPrice, getTokenSymbol } = require('../utils/tokenPrice');
 const { ensureReferralCode, applyReferralCodeOnSignup } = require('../utils/referralService');
 const { getOrCreateWalletAccount } = require('../utils/walletAccount');
+const { normalizeMobileNumber } = require('../utils/mobileNormalizer');
 const {
   resolveActivationStatusMap,
   resolveGlobalActivationCounts,
@@ -150,17 +151,32 @@ const findUserForReferralTree = async (input) => {
 
 const createUserByAdmin = async (req, res) => {
   try {
-    const { name, email, password, confirmPassword, referralCode } = req.body || {};
+    const {
+      name,
+      email,
+      mobile,
+      countryCode,
+      password,
+      confirmPassword,
+      referralCode,
+    } = req.body || {};
 
-    if (!name || !email || !password || !confirmPassword) {
+    if (!name || !email || !mobile || !password || !confirmPassword) {
       return res.status(400).json({
-        message: 'name, email, password, and confirmPassword are required',
+        message: 'name, email, mobile, password, and confirmPassword are required',
       });
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
     if (!normalizedEmail.includes('@')) {
       return res.status(400).json({ message: 'Valid email is required' });
+    }
+    const {
+      normalized: normalizedMobile,
+      isValid: isMobileValid,
+    } = normalizeMobileNumber(mobile, countryCode);
+    if (!isMobileValid) {
+      return res.status(400).json({ message: 'Valid mobile number is required' });
     }
 
     const passwordString = String(password);
@@ -178,6 +194,10 @@ const createUserByAdmin = async (req, res) => {
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists with this email' });
     }
+    const existingMobileUser = await User.findOne({ mobile: normalizedMobile });
+    if (existingMobileUser) {
+      return res.status(400).json({ message: 'User already exists with this mobile number' });
+    }
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(passwordString, salt);
@@ -185,10 +205,12 @@ const createUserByAdmin = async (req, res) => {
     const user = await User.create({
       name: String(name).trim(),
       email: normalizedEmail,
+      mobile: normalizedMobile,
       password: hashedPassword,
       role: 'user',
       isActive: true,
       isEmailVerified: true,
+      isMobileVerified: true,
       otp: undefined,
     });
 
@@ -215,6 +237,7 @@ const createUserByAdmin = async (req, res) => {
         _id: user._id,
         name: user.name,
         email: user.email,
+        mobile: user.mobile,
         role: user.role,
         referralCode: user.referralCode,
         referredBy: user.referredBy,
