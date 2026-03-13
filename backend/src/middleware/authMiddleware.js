@@ -14,8 +14,11 @@ const protect = async (req, res, next) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
       req.user = await User.findById(decoded.id).select('-password -pin');
+      if (!req.user) {
+        return res.status(401).json({ message: 'Not authorized, user not found' });
+      }
 
-      if (req.user && req.user.isActive === false) {
+      if (req.user.isActive === false) {
         return res.status(403).json({ message: 'Account is disabled' });
       }
 

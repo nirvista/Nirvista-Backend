@@ -637,6 +637,9 @@ const setupPIN = async (req, res) => {
   if (pin === undefined || pin === null) {
     return res.status(400).json({ message: 'PIN is required' });
   }
+  if (!req.user || !req.user._id) {
+    return res.status(401).json({ message: 'Not authorized, user not found' });
+  }
 
   try {
     const user = await User.findById(req.user._id);
