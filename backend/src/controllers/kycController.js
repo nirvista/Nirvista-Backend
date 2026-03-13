@@ -1,4 +1,6 @@
+const mongoose = require('mongoose');
 const KycApplication = require('../models/KycApplication');
+const User = require('../models/User');
 const {
   uploadImageBuffer,
   deleteFromCloudinary,
@@ -221,6 +223,130 @@ const getKycDetailAdmin = async (req, res) => {
   }
 };
 
+// Admin: search users and inspect KYC status for manual verification flow
+const adminSearchUsersForManualKyc = async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const filter = { role: 'user' };
+    if (q) {
+      const regex = new RegExp(q, 'i');
+      filter.$or = [{ name: regex }, { email: regex }, { mobile: regex }, { referralCode: regex }];
+    }
+
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select('name email mobile referralCode isActive isEmailVerified isMobileVerified createdAt'),
+      User.countDocuments(filter),
+    ]);
+
+    const userIds = users.map((user) => user._id);
+    const kycs = await KycApplication.find({ user: { $in: userIds } }).select(
+      'user status verifiedAt submittedAt rejectedAt rejectionReason',
+    );
+    const kycMap = new Map(kycs.map((kyc) => [kyc.user.toString(), kyc]));
+
+    const data = users.map((user) => {
+      const kyc = kycMap.get(user._id.toString());
+      return {
+        user,
+        kyc: kyc
+          ? {
+              _id: kyc._id,
+              status: kyc.status,
+              verifiedAt: kyc.verifiedAt,
+              submittedAt: kyc.submittedAt,
+              rejectedAt: kyc.rejectedAt,
+              rejectionReason: kyc.rejectionReason,
+            }
+          : { status: 'not_submitted' },
+      };
+    });
+
+    return res.json({
+      data,
+      pagination: {
+        total,
+        page,
+        limit,
+        hasMore: skip + data.length < total,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// Admin: manually mark a user as KYC verified, including users with no KYC submission
+const adminManualVerifyKyc = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { adminNote } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
+
+    const user = await User.findById(userId).select('name email mobile role');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (user.role !== 'user') {
+      return res.status(400).json({ message: 'Manual KYC verification is only allowed for user accounts' });
+    }
+
+    let kyc = await KycApplication.findOne({ user: user._id });
+    if (!kyc) {
+      kyc = new KycApplication({
+        user: user._id,
+        submittedAt: new Date(),
+      });
+    }
+
+    const metadata = typeof kyc.metadata === 'object' && kyc.metadata !== null ? { ...kyc.metadata } : {};
+    metadata.manualVerification = true;
+    metadata.manualVerifiedBy = req.user._id.toString();
+    metadata.manualVerifiedAt = new Date().toISOString();
+    if (adminNote !== undefined) {
+      metadata.adminNote = String(adminNote).trim();
+    }
+
+    kyc.status = 'verified';
+    kyc.reviewer = req.user._id;
+    kyc.rejectionReason = undefined;
+    kyc.rejectedAt = undefined;
+    kyc.verifiedAt = new Date();
+    kyc.metadata = metadata;
+    await kyc.save();
+
+    await createUserNotification({
+      userId: user._id,
+      title: 'KYC verified',
+      message: 'Your KYC has been manually approved by admin.',
+      type: 'kyc',
+      metadata: { kycId: kyc._id, status: kyc.status, manualVerification: true },
+    });
+
+    return res.json({
+      message: 'User KYC marked as verified',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        mobile: user.mobile,
+      },
+      kyc: buildStatusPayload(kyc),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 
 module.exports = {
   submitKyc,
@@ -228,4 +354,6 @@ module.exports = {
   uploadKycDocument,
   adminReviewKyc,
   getKycDetailAdmin,
+  adminSearchUsersForManualKyc,
+  adminManualVerifyKyc,
 };

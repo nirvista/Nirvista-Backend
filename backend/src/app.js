@@ -7,36 +7,22 @@ const { connectDB, isDbConnected } = require('./config/db');
 
 const app = express();
 
-// CORS Configuration - Allow all origins for global accessibility
+// CORS Configuration - Allow all domains for all APIs
 const corsOptions = {
-  origin: (origin, callback) => callback(null, true), // reflect requesting origin
-  credentials: false, // no cookies; Authorization header is allowed
+  origin: '*',
+  credentials: false,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400
+  maxAge: 86400,
 };
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors(corsOptions));
-
-// Additional CORS headers for extra compatibility
-app.use((req, res, next) => {
-  const origin = req.get('Origin') || '*';
-  res.header('Access-Control-Allow-Origin', origin);
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  
-  next();
-});
+app.options(/.*/, cors(corsOptions));
 
 // Routes Placeholder
 app.get('/', (req, res) => {

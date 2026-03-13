@@ -38,7 +38,12 @@ const {
   getReferralTreeAdminV2,
   getReferralTreeAdmin,
 } = require('../controllers/adminUserController');
-const { adminReviewKyc, getKycDetailAdmin } = require('../controllers/kycController');
+const {
+  adminReviewKyc,
+  getKycDetailAdmin,
+  adminSearchUsersForManualKyc,
+  adminManualVerifyKyc,
+} = require('../controllers/kycController');
 const {
   listNotificationsAdmin,
   createNotificationAdmin,
@@ -70,6 +75,8 @@ router.patch('/users/:id/activation/manual', setUserManualActivation);
 router.patch('/users/:id/email', updateUserEmail);
 router.patch('/users/:id/pin', updateUserPin);
 router.get('/kyc', listKycApplications);
+router.get('/kyc/manual/users', adminSearchUsersForManualKyc);
+router.patch('/kyc/manual/users/:userId/verify', adminManualVerifyKyc);
 router.get('/kyc/:kycId', getKycDetailAdmin);
 router.patch('/kyc/:kycId/status', adminReviewKyc);
 router.get('/ico/transactions', listIcoTransactions);
