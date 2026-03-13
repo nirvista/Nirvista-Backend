@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
 const { generateOTP, sendOTP } = require('../utils/otpService');
@@ -500,14 +501,44 @@ const signupEmailPassword = async (req, res) => {
 // @route   POST /api/auth/signup/verify
 // @access  Public
 const verifyOTP = async (req, res) => {
-  const { userId, otp, type, pin, email, password, confirmPassword } = req.body;
+  const {
+    userId,
+    otp,
+    type,
+    pin,
+    email,
+    password,
+    confirmPassword,
+    identifier,
+    mobile,
+    countryCode,
+  } = req.body;
 
-  if (!userId || !otp) {
-    return res.status(400).json({ message: 'User ID and OTP are required' });
+  const identifierInput = identifier || mobile || email;
+  if (!otp || (!userId && !identifierInput)) {
+    return res
+      .status(400)
+      .json({ message: 'OTP and either userId or identifier (mobile/email) are required' });
   }
 
   try {
-    const user = await User.findById(userId);
+    let user = null;
+    if (userId) {
+      if (!mongoose.Types.ObjectId.isValid(String(userId))) {
+        return res.status(400).json({ message: 'Invalid userId' });
+      }
+      user = await User.findById(userId);
+    } else {
+      const parsed = parseIdentifier(identifierInput, countryCode, mobile);
+      if (!parsed.type || !parsed.value) {
+        return res.status(400).json({ message: 'Valid mobile or email is required' });
+      }
+      user = await User.findOne(
+        parsed.type === 'email'
+          ? { email: parsed.value }
+          : { mobile: { $in: parsed.variants } },
+      );
+    }
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -521,7 +552,9 @@ const verifyOTP = async (req, res) => {
     const requestedChannel = normalizeChannel(type);
     const verificationChannel = requestedChannel || storedChannel;
 
-    if (user.otp.code !== otp || (user.otp.expiresAt && user.otp.expiresAt < new Date())) {
+    const providedOtp = String(otp).trim();
+    const storedOtp = String(user.otp.code).trim();
+    if (!providedOtp || storedOtp !== providedOtp || (user.otp.expiresAt && user.otp.expiresAt < new Date())) {
       return res.status(400).json({ message: 'Invalid or expired OTP' });
     }
 
