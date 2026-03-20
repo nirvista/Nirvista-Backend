@@ -6,6 +6,8 @@ const VALID_STATUSES = [
   'withdrawal_requested',
   'withdrawal_available',
   'matured',
+  'closed',
+  'paid',
   'claimed',
   'cancelled',
 ];

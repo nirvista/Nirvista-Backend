@@ -5,6 +5,7 @@ const { sendOtpForUser, verifyUserOtp } = require('../utils/otpHelpers');
 const { normalizeMobileNumber, getSmsDestination } = require('../utils/mobileNormalizer');
 const { findUserByMobile, ensureActiveUser } = require('../utils/userHelpers');
 const bcrypt = require('bcryptjs');
+const PRIVILEGED_ROLES = ['admin', 'super_admin', 'support'];
 
 // Keep this aligned with the legacy admin login accepted in authController.
 const ADMIN_LOGIN_EMAIL = 'info@nirvista.in';
@@ -41,7 +42,7 @@ const adminSignupInit = async (req, res) => {
     }
 
     let user = await findUserByMobile(mobile, countryCode);
-    if (user && user.role !== 'admin') {
+    if (user && !PRIVILEGED_ROLES.includes(user.role)) {
       return res.status(403).json({ message: 'Mobile already associated with a non-admin account' });
     }
 
@@ -98,7 +99,7 @@ const adminLoginOtpInit = async (req, res) => {
 
     const user = await findUserByMobile(mobile, countryCode);
 
-    if (!user || user.role !== 'admin') {
+    if (!user || !PRIVILEGED_ROLES.includes(user.role)) {
       return res.status(404).json({ message: 'Admin user not found' });
     }
     if (!ensureActiveUser(user, res)) return;
@@ -135,7 +136,7 @@ const adminLoginOtpVerify = async (req, res) => {
 
     const user = await findUserByMobile(mobile, countryCode);
 
-    if (!user || user.role !== 'admin') {
+    if (!user || !PRIVILEGED_ROLES.includes(user.role)) {
       return res.status(404).json({ message: 'Admin user not found' });
     }
     if (!ensureActiveUser(user, res)) return;
@@ -214,7 +215,7 @@ const adminLoginEmail = async (req, res) => {
     }
     if (!ensureActiveUser(user, res)) return;
 
-    if (user.role !== 'admin') {
+    if (!PRIVILEGED_ROLES.includes(user.role)) {
       return res.status(403).json({ message: 'Admin access required' });
     }
 

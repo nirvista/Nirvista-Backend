@@ -561,6 +561,7 @@ const requestWalletWithdrawal = async (req, res) => {
     await user.save();
 
     const wallet = await getOrCreateWalletAccount(req.user._id);
+    const walletBalanceAtRequestTime = wallet.balance;
     if (wallet.balance < amount) {
       return res.status(400).json({ message: 'Insufficient wallet balance' });
     }
@@ -582,6 +583,7 @@ const requestWalletWithdrawal = async (req, res) => {
       metadata: {
         payoutMethod,
         payoutDetails,
+        walletBalanceAtRequestTime,
         note: req.body.note?.trim(),
       },
     });

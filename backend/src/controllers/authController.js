@@ -1067,7 +1067,7 @@ const forgotPasswordInit = async (req, res) => {
   try {
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: 'Account is not found' });
     }
     if (!ensureActiveUser(user, res)) return;
 
@@ -1113,7 +1113,7 @@ const forgotPasswordReset = async (req, res) => {
   try {
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: 'Account is not found' });
     }
     if (!ensureActiveUser(user, res)) return;
 

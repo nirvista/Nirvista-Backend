@@ -346,7 +346,7 @@ const setUserManualActivation = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    if (user.role === 'admin') {
+    if (['admin', 'super_admin', 'support'].includes(user.role)) {
       return res.status(400).json({ message: 'Manual activation is only for user accounts' });
     }
 

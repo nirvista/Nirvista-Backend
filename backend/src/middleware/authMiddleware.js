@@ -34,11 +34,15 @@ const protect = async (req, res, next) => {
   }
 };
 
-const requireAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Admin access required' });
+const requireRoles = (...roles) => (req, res, next) => {
+  if (!req.user || !roles.includes(req.user.role)) {
+    return res.status(403).json({ message: 'Insufficient permissions' });
   }
   next();
 };
 
-module.exports = { protect, requireAdmin };
+const requireAdmin = requireRoles('admin', 'super_admin');
+const requirePrivileged = requireRoles('support', 'admin', 'super_admin');
+const requireSuperAdmin = requireRoles('super_admin');
+
+module.exports = { protect, requireAdmin, requireRoles, requirePrivileged, requireSuperAdmin };
