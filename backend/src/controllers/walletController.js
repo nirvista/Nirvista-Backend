@@ -1225,6 +1225,84 @@ const adminUpdateWalletTransaction = async (req, res) => {
   }
 };
 
+const adminManualWalletCredit = async (req, res) => {
+  try {
+    const { userId, amount, note } = req.body || {};
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(400).json({ message: 'Valid userId is required' });
+    }
+
+    const numericAmount = Number(amount);
+    if (Number.isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ message: 'Valid amount is required' });
+    }
+
+    const user = await User.findById(userId).select('name email mobile role');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (user.role !== 'user') {
+      return res
+        .status(400)
+        .json({ message: 'Manual wallet credit is only allowed for user accounts' });
+    }
+
+    const wallet = await getOrCreateWalletAccount(user._id);
+    wallet.balance += numericAmount;
+    wallet.totalCredited += numericAmount;
+    await wallet.save();
+
+    const transaction = await WalletTransaction.create({
+      user: user._id,
+      wallet: wallet._id,
+      type: 'credit',
+      category: 'adjustment',
+      amount: numericAmount,
+      currency: wallet.currency || 'INR',
+      status: 'completed',
+      description: note?.trim() || `Manual wallet credit by admin of INR ${numericAmount}`,
+      paymentGateway: 'admin_manual',
+      merchantTransactionId: `adm_${Date.now()}_${String(user._id).slice(-6)}`,
+      metadata: {
+        source: 'admin_manual_credit',
+        creditedBy: req.user._id,
+      },
+      adminNote: note?.trim(),
+    });
+
+    recordStatusChange(transaction, 'completed', req.user._id, note?.trim() || 'Manual admin credit');
+    await transaction.save();
+    await syncUserActivationTimestamp(user._id);
+
+    await createUserNotification({
+      userId: user._id,
+      title: 'Wallet credited by admin',
+      message: `INR ${numericAmount} has been credited to your wallet by admin.`,
+      type: 'admin',
+      metadata: { transactionId: transaction._id, amount: numericAmount },
+    });
+
+    return res.status(201).json({
+      message: 'Wallet credited successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        mobile: user.mobile,
+      },
+      wallet: {
+        balance: wallet.balance,
+        totalCredited: wallet.totalCredited,
+        currency: wallet.currency,
+      },
+      transaction: sanitizeTransaction(transaction),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getWalletSummary,
   listWalletTransactions,
@@ -1239,4 +1317,5 @@ module.exports = {
   getWalletAnalytics,
   adminListWalletTransactions,
   adminUpdateWalletTransaction,
+  adminManualWalletCredit,
 };

@@ -51,6 +51,7 @@ const {
 const {
   adminListWalletTransactions,
   adminUpdateWalletTransaction,
+  adminManualWalletCredit,
 } = require('../controllers/walletController');
 const { protect, requireAdmin } = require('../middleware/authMiddleware');
 
@@ -94,6 +95,7 @@ router.patch('/mobile/requests/:id', reviewMobileChangeRequest);
 
 router.get('/wallet/transactions', adminListWalletTransactions);
 router.patch('/wallet/transactions/:transactionId', adminUpdateWalletTransaction);
+router.post('/wallet/manual-credit', adminManualWalletCredit);
 
 router.get('/notifications', listNotificationsAdmin);
 router.post('/notifications', createNotificationAdmin);

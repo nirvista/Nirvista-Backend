@@ -70,6 +70,8 @@ Server will run on `http://localhost:5000`
 | POST | `/api/auth/login/email` | Login with email/password |
 | POST | `/api/auth/login/mobile-init` | Request mobile OTP |
 | POST | `/api/auth/login/mobile-verify` | Verify mobile OTP & login |
+| POST | `/api/auth/forgot-password/init` | Send email OTP for password reset |
+| POST | `/api/auth/forgot-password/reset` | Reset password using email + OTP |
 | POST | `/api/auth/login/pin` | Login with PIN |
 
 Notes:

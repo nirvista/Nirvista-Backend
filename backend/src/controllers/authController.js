@@ -1053,6 +1053,98 @@ const loginOtpVerify = async (req, res) => {
   }
 };
 
+// @desc    Forgot Password - Send OTP to Email
+// @route   POST /api/auth/forgot-password/init
+// @access  Public
+const forgotPasswordInit = async (req, res) => {
+  const { email } = req.body || {};
+  const normalizedEmail = normalizeEmailValue(email);
+
+  if (!normalizedEmail || !normalizedEmail.includes('@')) {
+    return res.status(400).json({ message: 'Valid email is required' });
+  }
+
+  try {
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (!ensureActiveUser(user, res)) return;
+
+    if (!user.isEmailVerified) {
+      return res.status(403).json({ message: 'Email not verified' });
+    }
+
+    const otpPayload = buildOTP('email', 'forgot_password');
+    user.otp = otpPayload;
+    await user.save();
+    await sendOTP(normalizedEmail, otpPayload.code, 'email');
+
+    return res.json({
+      message: 'OTP sent to email for password reset',
+      userId: user._id,
+      otpExpiresAt: otpPayload.expiresAt,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Forgot Password - Reset Password with Email OTP
+// @route   POST /api/auth/forgot-password/reset
+// @access  Public
+const forgotPasswordReset = async (req, res) => {
+  const { email, otp, password, confirmPassword } = req.body || {};
+  const normalizedEmail = normalizeEmailValue(email);
+
+  if (!normalizedEmail || !normalizedEmail.includes('@')) {
+    return res.status(400).json({ message: 'Valid email is required' });
+  }
+
+  if (!otp) {
+    return res.status(400).json({ message: 'OTP is required' });
+  }
+
+  const passwordCheck = validatePasswordConfirmation(password, confirmPassword, { required: true });
+  if (!passwordCheck.ok) {
+    return res.status(400).json({ message: passwordCheck.message });
+  }
+
+  try {
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (!ensureActiveUser(user, res)) return;
+
+    if (!user.otp || !user.otp.code) {
+      return res.status(400).json({ message: 'No OTP pending verification' });
+    }
+
+    const otpChannel = normalizeChannel(user.otp.channel || 'email');
+    if (otpChannel !== 'email' || user.otp.purpose !== 'forgot_password') {
+      return res.status(400).json({ message: 'No password reset OTP pending verification' });
+    }
+
+    const normalizedOtp = String(otp).trim();
+    if (
+      !normalizedOtp ||
+      String(user.otp.code).trim() !== normalizedOtp ||
+      (user.otp.expiresAt && user.otp.expiresAt < new Date())
+    ) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
+
+    user.password = await hashPasswordValue(passwordCheck.password);
+    user.otp = undefined;
+    await user.save();
+
+    return res.json({ message: 'Password reset successful' });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Login with PIN
 // @route   POST /api/auth/login/pin
 // @access  Public (but requires identifier)
@@ -1136,5 +1228,7 @@ module.exports = {
   loginMobileVerify,
   loginOtpInit,
   loginOtpVerify,
+  forgotPasswordInit,
+  forgotPasswordReset,
   loginPIN,
 };

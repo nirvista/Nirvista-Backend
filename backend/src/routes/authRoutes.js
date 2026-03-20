@@ -13,6 +13,8 @@ const {
   loginMobileVerify,
   loginOtpInit,
   loginOtpVerify,
+  forgotPasswordInit,
+  forgotPasswordReset,
   loginPIN,
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
@@ -33,6 +35,8 @@ router.get('/', (_req, res) => {
       'POST /api/auth/login/mobile',
       'POST /api/auth/login/otp-init',
       'POST /api/auth/login/otp-verify',
+      'POST /api/auth/forgot-password/init',
+      'POST /api/auth/forgot-password/reset',
       'POST /api/auth/login/mobile-init',
       'POST /api/auth/login/mobile-verify',
       'POST /api/auth/login/pin',
@@ -56,6 +60,8 @@ router.post('/login/email-password', loginEmail);
 router.post('/login/mobile', loginMobile);
 router.post('/login/otp-init', loginOtpInit);
 router.post('/login/otp-verify', loginOtpVerify);
+router.post('/forgot-password/init', forgotPasswordInit);
+router.post('/forgot-password/reset', forgotPasswordReset);
 router.post('/login/mobile-init', loginMobileInit);
 router.post('/login/mobile-verify', loginMobileVerify);
 router.post('/login/pin', loginPIN);
