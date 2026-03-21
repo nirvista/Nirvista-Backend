@@ -18,6 +18,10 @@ const { getTokenSymbol, getTokenPrice } = require('../utils/tokenPrice');
 const { buildReferralTree } = require('../utils/referralTree');
 const { createUserNotification } = require('../utils/notificationService');
 const { getOrCreateWalletAccount } = require('../utils/walletAccount');
+const {
+  resolveActivationStatusMap,
+  resolveUserActivationStatus,
+} = require('../utils/activationPolicy');
 
 const ADMIN_BONUS_PERCENT = Number(process.env.ICO_BONUS_PERCENT || 8);
 
@@ -85,10 +89,11 @@ const listAdminUsers = async (req, res) => {
       filter.$or = [{ name: regex }, { email: regex }, { mobile: regex }, { referralCode: regex }];
     }
 
-    if (req.query.accountStatus) {
-      const status = String(req.query.accountStatus).toLowerCase();
-      if (status === 'active') filter.isActive = true;
-      if (status === 'suspended') filter.isActive = false;
+    const requestedAccountStatus = req.query.accountStatus
+      ? String(req.query.accountStatus).toLowerCase()
+      : '';
+    if (requestedAccountStatus === 'suspended') {
+      filter.isActive = false;
     }
 
     const [users, total] = await Promise.all([
@@ -101,44 +106,58 @@ const listAdminUsers = async (req, res) => {
     ]);
 
     const userIds = users.map((item) => item._id);
-    const [kycDocs, holdings] = await Promise.all([
+    const [kycDocs, holdings, activationMap] = await Promise.all([
       KycApplication.find({ user: { $in: userIds } }).select('user status'),
       IcoHolding.find({ user: { $in: userIds } }).select('user balance'),
+      resolveActivationStatusMap(userIds),
     ]);
 
     const kycMap = new Map(kycDocs.map((item) => [item.user.toString(), item.status]));
     const holdingMap = new Map(holdings.map((item) => [item.user.toString(), item.balance]));
 
-    const data = users.map((item) => ({
-      userId: item._id,
-      fullName: item.name,
-      emailAddress: item.email,
-      phoneNumber: item.mobile,
-      emailVerificationStatus: item.isEmailVerified ? 'verified' : 'not_verified',
-      phoneVerificationStatus: item.isMobileVerified ? 'verified' : 'not_verified',
-      kycStatus: kycMap.get(item._id.toString()) || 'pending',
-      accountStatus: item.isActive ? 'active' : 'suspended',
-      registrationDate: item.createdAt,
-      tokenBalance: holdingMap.get(item._id.toString()) || 0,
-      actions: {
-        viewDetails: true,
-        transactions: true,
-        referrals: true,
-        addTokens: req.user.role === 'super_admin',
-        resetPassword: req.user.role === 'super_admin',
-        verifyEmail: req.user.role === 'super_admin',
-        activateSuspendToggle: req.user.role === 'super_admin',
-        editProfile: req.user.role === 'super_admin',
-      },
-    }));
+    let data = users.map((item) => {
+      const activationStatus = activationMap.get(item._id.toString());
+      const accountStatus = item.isActive === false
+        ? 'suspended'
+        : (activationStatus?.binaryStatus || 'inactive');
+
+      return {
+        userId: item._id,
+        fullName: item.name,
+        emailAddress: item.email,
+        phoneNumber: item.mobile,
+        emailVerificationStatus: item.isEmailVerified ? 'verified' : 'not_verified',
+        phoneVerificationStatus: item.isMobileVerified ? 'verified' : 'not_verified',
+        kycStatus: kycMap.get(item._id.toString()) || 'pending',
+        accountStatus,
+        registrationDate: item.createdAt,
+        tokenBalance: holdingMap.get(item._id.toString()) || 0,
+        actions: {
+          viewDetails: true,
+          transactions: true,
+          referrals: true,
+          addTokens: req.user.role === 'super_admin',
+          resetPassword: req.user.role === 'super_admin',
+          verifyEmail: req.user.role === 'super_admin',
+          activateSuspendToggle: req.user.role === 'super_admin',
+          editProfile: req.user.role === 'super_admin',
+        },
+      };
+    });
+
+    if (['active', 'inactive', 'suspended'].includes(requestedAccountStatus)) {
+      data = data.filter((item) => item.accountStatus === requestedAccountStatus);
+    }
 
     return res.json({
       data,
       pagination: {
-        total,
+        total: ['active', 'inactive', 'suspended'].includes(requestedAccountStatus) ? data.length : total,
         page,
         limit,
-        hasMore: skip + data.length < total,
+        hasMore: ['active', 'inactive', 'suspended'].includes(requestedAccountStatus)
+          ? false
+          : skip + data.length < total,
       },
     });
   } catch (error) {
@@ -157,7 +176,7 @@ const getAdminUserDashboard = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const [kyc, wallet, holding, purchasedAgg, lockedAgg, referralAgg, stakingPositions, adjustmentAgg] =
+    const [kyc, wallet, holding, purchasedAgg, lockedAgg, referralAgg, stakingPositions, adjustmentAgg, activationStatus] =
       await Promise.all([
         KycApplication.findOne({ user: user._id }),
         WalletAccount.findOne({ user: user._id }),
@@ -189,6 +208,7 @@ const getAdminUserDashboard = async (req, res) => {
           { $match: { user: user._id } },
           { $group: { _id: null, totalAdjusted: { $sum: '$amount' } } },
         ]),
+        resolveUserActivationStatus(user._id),
       ]);
 
     const totalTokensPurchased = purchasedAgg?.[0]?.totalPurchased || 0;
@@ -224,7 +244,7 @@ const getAdminUserDashboard = async (req, res) => {
         email: user.email,
         phone: user.mobile,
         address: user.addresses?.find((item) => item.isDefault) || null,
-        accountStatus: user.isActive ? 'active' : 'suspended',
+        accountStatus: user.isActive === false ? 'suspended' : activationStatus.binaryStatus,
         registrationDate: user.createdAt,
       },
       kyc: {
