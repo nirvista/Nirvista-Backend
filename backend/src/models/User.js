@@ -198,6 +198,9 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  lastLoginAt: {
+    type: Date,
+  },
   otp: {
     code: {
       type: String,

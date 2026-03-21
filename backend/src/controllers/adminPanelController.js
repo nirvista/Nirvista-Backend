@@ -240,10 +240,12 @@ const getAdminUserDashboard = async (req, res) => {
 
     return res.json({
       profile: {
+        userId: user._id,
         fullName: user.name,
-        email: user.email,
-        phone: user.mobile,
-        address: user.addresses?.find((item) => item.isDefault) || null,
+        referralCode: user.referralCode || 'No data available',
+        email: user.email || 'No data available',
+        phone: user.mobile || 'No data available',
+        lastLogin: user.lastLoginAt || 'No data available',
         accountStatus: user.isActive === false ? 'suspended' : activationStatus.binaryStatus,
         registrationDate: user.createdAt,
       },

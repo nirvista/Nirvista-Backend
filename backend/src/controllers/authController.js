@@ -66,6 +66,11 @@ const hashPasswordValue = async (password) => {
   return bcrypt.hash(String(password), salt);
 };
 
+const markUserLogin = async (user) => {
+  user.lastLoginAt = new Date();
+  await user.save();
+};
+
 // Normalize identifier to detect email vs mobile
 const parseIdentifier = (identifier = '', countryCode = '', fallbackMobile = '') => {
   const trimmed = String(identifier || fallbackMobile || '').trim();
@@ -481,6 +486,7 @@ const signupEmailPassword = async (req, res) => {
     }
 
     await user.save();
+    await markUserLogin(user);
     await getOrCreateWalletAccount(user._id);
 
     return res.status(wasExistingUser ? 200 : 201).json({
@@ -703,8 +709,9 @@ const loginEmail = async (req, res) => {
         user.isActive = true;
         user.disabledAt = undefined;
         user.disabledReason = undefined;
-        await user.save();
       }
+
+      await markUserLogin(user);
 
       await getOrCreateWalletAccount(user._id);
       return res.json({
@@ -727,6 +734,7 @@ const loginEmail = async (req, res) => {
     }
 
     if (await user.matchPassword(password)) {
+      await markUserLogin(user);
       await getOrCreateWalletAccount(user._id);
       return res.json({
         _id: user._id,
@@ -834,7 +842,7 @@ const loginMobileVerify = async (req, res) => {
     }
 
     user.otp = undefined;
-    await user.save();
+    await markUserLogin(user);
 
     await getOrCreateWalletAccount(user._id);
 
@@ -890,6 +898,7 @@ const loginMobile = async (req, res) => {
       }
       const pinString = String(pin);
       if (await user.matchPin(pinString)) {
+        await markUserLogin(user);
         await getOrCreateWalletAccount(user._id);
         return res.json({
           _id: user._id,
@@ -917,7 +926,7 @@ const loginMobile = async (req, res) => {
       }
 
       user.otp = undefined;
-      await user.save();
+      await markUserLogin(user);
       await getOrCreateWalletAccount(user._id);
 
       return res.json({
@@ -1037,7 +1046,7 @@ const loginOtpVerify = async (req, res) => {
     }
 
     user.otp = undefined;
-    await user.save();
+    await markUserLogin(user);
 
     await getOrCreateWalletAccount(user._id);
 
@@ -1198,6 +1207,7 @@ const loginPIN = async (req, res) => {
     const pinString = String(pin);
 
     if (await user.matchPin(pinString)) {
+      await markUserLogin(user);
       await getOrCreateWalletAccount(user._id);
       res.json({
         _id: user._id,
