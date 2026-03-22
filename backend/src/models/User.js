@@ -189,6 +189,10 @@ const userSchema = new mongoose.Schema({
   profileImageSetAt: {
     type: Date,
   },
+  address: {
+    type: String,
+    trim: true,
+  },
   addresses: [addressSchema],
   isEmailVerified: {
     type: Boolean,

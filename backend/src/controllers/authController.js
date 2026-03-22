@@ -232,8 +232,19 @@ const signupCombinedInit = async (req, res) => {
 // @desc    Register user with Email (Step 1)
 // @route   POST /api/auth/signup/email-init
 // @access  Public
+// Required: name, email, password, confirmPassword
+// Optional: mobile, address, referralCode
 const signupEmailInit = async (req, res) => {
-  const { name, email, password, confirmPassword, referralCode } = req.body;
+  const {
+    name,
+    email,
+    password,
+    confirmPassword,
+    referralCode,
+    mobile,
+    countryCode,
+    address,
+  } = req.body;
 
   if (!name || !email || !password) {
     return res.status(400).json({ message: 'Name, email, and password are required' });
@@ -246,19 +257,34 @@ const signupEmailInit = async (req, res) => {
 
   const normalizedEmail = normalizeEmailValue(email);
 
+  // Validate optional mobile if provided
+  let normalizedMobile = null;
+  if (mobile) {
+    const mobileResult = normalizeMobileNumber(mobile, countryCode);
+    if (!mobileResult.isValid) {
+      return res.status(400).json({ message: 'Valid mobile number is required' });
+    }
+    normalizedMobile = mobileResult.normalized;
+  }
+
   try {
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    const query = normalizedMobile
+      ? { $or: [{ email: normalizedEmail }, { mobile: normalizedMobile }] }
+      : { email: normalizedEmail };
+    const existingUser = await User.findOne(query);
     const hashedPassword = await hashPasswordValue(passwordCheck.password);
     const otpPayload = buildOTP('email', 'signup');
 
     if (existingUser) {
       if (existingUser.isEmailVerified) {
-        return res.status(400).json({ message: 'User already exists with this email' });
+        return res.status(400).json({ message: 'User already exists with this email or mobile' });
       }
 
       existingUser.name = name || existingUser.name;
       existingUser.email = normalizedEmail;
       existingUser.password = hashedPassword;
+      if (normalizedMobile) existingUser.mobile = normalizedMobile;
+      if (address) existingUser.address = String(address).trim();
       existingUser.otp = otpPayload;
 
       const ensuredCode = await ensureReferralCode(existingUser);
@@ -286,6 +312,8 @@ const signupEmailInit = async (req, res) => {
       name,
       email: normalizedEmail,
       password: hashedPassword,
+      ...(normalizedMobile && { mobile: normalizedMobile }),
+      ...(address && { address: String(address).trim() }),
       otp: otpPayload,
     });
 
@@ -315,8 +343,19 @@ const signupEmailInit = async (req, res) => {
 // @desc    Register user with Mobile (Step 1)
 // @route   POST /api/auth/signup/mobile-init
 // @access  Public
+// Required: name, mobile, referralCode
+// Optional: email, password, confirmPassword, address
 const signupMobileInit = async (req, res) => {
-  const { name, mobile, countryCode, referralCode, email, password, confirmPassword } = req.body;
+  const {
+    name,
+    mobile,
+    countryCode,
+    referralCode,
+    email,
+    password,
+    confirmPassword,
+    address,
+  } = req.body;
 
   if (!name || !mobile || !referralCode) {
     return res.status(400).json({ message: 'Name, mobile, and referral code are required' });
@@ -372,6 +411,7 @@ const signupMobileInit = async (req, res) => {
         existingUser.email = finalEmail;
       }
       if (hashedPassword) existingUser.password = hashedPassword;
+      if (address) existingUser.address = String(address).trim();
       existingUser.otp = otpPayload;
 
       const ensuredCode = await ensureReferralCode(existingUser);
@@ -398,6 +438,7 @@ const signupMobileInit = async (req, res) => {
       mobile: normalizedMobile,
       email: finalEmail,
       password: hashedPassword,
+      ...(address && { address: String(address).trim() }),
       otp: otpPayload,
     });
 
