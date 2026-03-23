@@ -598,9 +598,20 @@ const getUserFinancialDetails = async (req, res) => {
 
 const updateUserStatus = async (req, res) => {
   try {
-    const { isActive, reason } = req.body || {};
-    if (isActive === undefined) {
-      return res.status(400).json({ message: 'isActive is required' });
+    const { isActive, reason, status, action } = req.body || {};
+    const normalizedStatus = String(status || action || '').trim().toLowerCase();
+
+    let nextIsActive;
+    if (isActive !== undefined) {
+      nextIsActive = Boolean(isActive);
+    } else if (['active', 'activate', 'enable', 'enabled'].includes(normalizedStatus)) {
+      nextIsActive = true;
+    } else if (['inactive', 'suspend', 'suspended', 'disable', 'disabled'].includes(normalizedStatus)) {
+      nextIsActive = false;
+    } else {
+      return res.status(400).json({
+        message: 'Provide isActive or status/action (active|suspended)',
+      });
     }
 
     const user = await User.findById(req.params.id);
@@ -608,29 +619,44 @@ const updateUserStatus = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    user.isActive = Boolean(isActive);
+    if (String(req.user?._id) === String(user._id) && nextIsActive === false) {
+      return res.status(400).json({ message: 'You cannot suspend your own account' });
+    }
+
+    const privilegedRoles = ['admin', 'super_admin', 'support'];
+    if (
+      privilegedRoles.includes(user.role) &&
+      req.user?.role !== 'super_admin'
+    ) {
+      return res.status(403).json({
+        message: 'Only super admin can change privileged account status',
+      });
+    }
+
+    user.isActive = nextIsActive;
     if (user.isActive) {
       user.activatedAt = new Date();
       user.disabledAt = undefined;
       user.disabledReason = undefined;
     } else {
       user.disabledAt = new Date();
-      user.disabledReason = reason || 'Disabled by admin';
+      user.disabledReason = reason || 'Account suspended by admin';
     }
 
     await user.save();
 
     await createUserNotification({
       userId: user._id,
-      title: user.isActive ? 'Account activated' : 'Account disabled',
+      title: user.isActive ? 'Account activated' : 'Account suspended',
       message: user.isActive
         ? 'Your account has been activated by admin.'
-        : `Your account has been disabled. ${user.disabledReason || ''}`.trim(),
+        : `Your account has been suspended. ${user.disabledReason || ''}`.trim(),
       type: 'admin',
       metadata: { isActive: user.isActive },
     });
     res.json({
       id: user._id,
+      status: user.isActive ? 'active' : 'suspended',
       isActive: user.isActive,
       disabledAt: user.disabledAt,
       disabledReason: user.disabledReason,

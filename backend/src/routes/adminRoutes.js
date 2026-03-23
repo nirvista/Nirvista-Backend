@@ -108,7 +108,7 @@ router.get('/users', listUsers);
 router.get('/users/details', listUsersWithDetails);
 router.get('/users/:id', getUserDetail);
 router.get('/users/:id/financials', getUserFinancialDetails);
-router.patch('/users/:id/status', requireSuperAdmin, updateUserStatus);
+router.patch('/users/:id/status', requireAdmin, updateUserStatus);
 router.patch('/users/:id/activation/manual', requireSuperAdmin, setUserManualActivation);
 router.patch('/users/:id/email', requireSuperAdmin, updateUserEmail);
 router.patch('/users/:id/pin', requireSuperAdmin, updateUserPin);
@@ -159,7 +159,7 @@ router.post('/panel/users/:id/tokens', requireSuperAdmin, adminAddTokens);
 router.post('/panel/users/:id/password/reset', requireSuperAdmin, adminResetPassword);
 router.post('/panel/users/:id/email/verify', requireSuperAdmin, adminVerifyUserEmail);
 router.patch('/panel/users/:id/profile', requireSuperAdmin, adminEditUserProfile);
-router.patch('/panel/users/:id/status', requireSuperAdmin, updateUserStatus);
+router.patch('/panel/users/:id/status', requireAdmin, updateUserStatus);
 
 router.get('/panel/commission-withdrawals', listCommissionWithdrawalRequests);
 router.get('/panel/commission-withdrawals/:requestId', getCommissionWithdrawalRequestDetail);

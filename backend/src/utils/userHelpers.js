@@ -3,7 +3,8 @@ const { normalizeMobileNumber } = require('./mobileNormalizer');
 
 const ensureActiveUser = (user, res) => {
   if (user && user.isActive === false) {
-    res.status(403).json({ message: 'Account is disabled' });
+    const reason = user.disabledReason ? ` Reason: ${user.disabledReason}` : '';
+    res.status(403).json({ message: `Account suspended. Contact support.${reason}` });
     return false;
   }
   return true;

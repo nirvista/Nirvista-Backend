@@ -19,7 +19,8 @@ const protect = async (req, res, next) => {
       }
 
       if (req.user.isActive === false) {
-        return res.status(403).json({ message: 'Account is disabled' });
+        const reason = req.user.disabledReason ? ` Reason: ${req.user.disabledReason}` : '';
+        return res.status(403).json({ message: `Account suspended. Contact support.${reason}` });
       }
 
       next();
