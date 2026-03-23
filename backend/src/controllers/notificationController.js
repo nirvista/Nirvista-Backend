@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Notification = require('../models/Notification');
+const User = require('../models/User');
 const {
   createUserNotification,
   createBroadcastNotification,
@@ -150,9 +151,78 @@ const createNotificationAdmin = async (req, res) => {
   }
 };
 
+const registerNotificationToken = async (req, res) => {
+  try {
+    const rawToken = req.body?.token;
+    const platformRaw = req.body?.platform;
+    const token = typeof rawToken === 'string' ? rawToken.trim() : '';
+    const platform = typeof platformRaw === 'string' ? platformRaw.trim().toLowerCase() : 'unknown';
+
+    if (!token || token.length < 20) {
+      return res.status(400).json({ message: 'Valid FCM token is required' });
+    }
+
+    const allowedPlatforms = new Set(['android', 'ios', 'web', 'unknown']);
+    const normalizedPlatform = allowedPlatforms.has(platform) ? platform : 'unknown';
+    const now = new Date();
+
+    await User.updateOne(
+      { _id: req.user._id },
+      {
+        $pull: {
+          fcmTokens: { token },
+        },
+      },
+    );
+
+    await User.updateOne(
+      { _id: req.user._id },
+      {
+        $push: {
+          fcmTokens: {
+            token,
+            platform: normalizedPlatform,
+            createdAt: now,
+            lastSeenAt: now,
+          },
+        },
+      },
+    );
+
+    return res.json({ ok: true, token, platform: normalizedPlatform });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+const unregisterNotificationToken = async (req, res) => {
+  try {
+    const rawToken = req.body?.token;
+    const token = typeof rawToken === 'string' ? rawToken.trim() : '';
+    if (!token) {
+      return res.status(400).json({ message: 'token is required' });
+    }
+
+    await User.updateOne(
+      { _id: req.user._id },
+      {
+        $pull: {
+          fcmTokens: { token },
+        },
+      },
+    );
+
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   listNotificationsUser,
   markNotificationRead,
   listNotificationsAdmin,
   createNotificationAdmin,
+  registerNotificationToken,
+  unregisterNotificationToken,
 };

@@ -30,6 +30,8 @@ const {
 const {
   listNotificationsUser,
   markNotificationRead,
+  registerNotificationToken,
+  unregisterNotificationToken,
 } = require('../controllers/notificationController');
 const { protect } = require('../middleware/authMiddleware');
 const { singleImageUpload } = require('../middleware/uploadMiddleware');
@@ -68,5 +70,7 @@ router.get('/referral/downline', listReferralDownline);
 router.get('/referral/tree', getReferralTree);
 router.get('/notifications', listNotificationsUser);
 router.patch('/notifications/:id/read', markNotificationRead);
+router.post('/notifications/token', registerNotificationToken);
+router.delete('/notifications/token', unregisterNotificationToken);
 
 module.exports = router;

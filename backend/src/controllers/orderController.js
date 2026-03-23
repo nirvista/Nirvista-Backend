@@ -14,7 +14,7 @@ const ensureCartIsValid = async (cart) => {
     if (product.stock < item.quantity) {
       throw new Error(`Insufficient stock for ${product.name}`);
     }
-  }
+  }  
 };
 
 const snapshotItems = (cart) => {

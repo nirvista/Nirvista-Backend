@@ -49,6 +49,30 @@ const addressSchema = new mongoose.Schema({
   },
 });
 
+const fcmTokenSchema = new mongoose.Schema(
+  {
+    token: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    platform: {
+      type: String,
+      enum: ['android', 'ios', 'web', 'unknown'],
+      default: 'unknown',
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    lastSeenAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false },
+);
+
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -220,6 +244,10 @@ const userSchema = new mongoose.Schema({
       type: String,
       trim: true,
     },
+  },
+  fcmTokens: {
+    type: [fcmTokenSchema],
+    default: [],
   },
 }, {
   timestamps: true,
