@@ -53,6 +53,8 @@ const {
   approveCommissionWithdrawalRequest,
   rejectCommissionWithdrawalRequest,
   markCommissionWithdrawalRequestPaid,
+  listAdminStakingUsers,
+  getAdminStakingUserDetail,
   listStakingClosures,
   closeStakingPosition,
   triggerStakingPayout,
@@ -167,6 +169,8 @@ router.post('/panel/commission-withdrawals/:requestId/approve', requireAdmin, ap
 router.post('/panel/commission-withdrawals/:requestId/reject', requireAdmin, rejectCommissionWithdrawalRequest);
 router.post('/panel/commission-withdrawals/:requestId/mark-paid', requireAdmin, markCommissionWithdrawalRequestPaid);
 
+router.get('/panel/staking/users', listAdminStakingUsers);
+router.get('/panel/staking/users/:userId', getAdminStakingUserDetail);
 router.get('/panel/staking/closures', listStakingClosures);
 router.post('/panel/staking/:stakeId/close', requireAdmin, closeStakingPosition);
 router.post('/panel/staking/:stakeId/payout', requireAdmin, triggerStakingPayout);

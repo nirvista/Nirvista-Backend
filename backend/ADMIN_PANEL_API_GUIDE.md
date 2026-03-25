@@ -245,6 +245,128 @@ Authorization: Bearer <admin_jwt_token>
 
 ## 4.4 Staking Closure + Unified Staking
 
+### GET `/api/admin/panel/staking/users`
+- Purpose: first admin screen for staking users list.
+- Query:
+  - `page`, `limit`
+  - `search` (name/email/mobile/referralCode)
+  - `status`
+  - `type(fixed|flexible)`
+  - `durationMonths`
+- Response:
+```json
+{
+  "data": [
+    {
+      "userId": "USER_ID",
+      "fullName": "User Name",
+      "email": "user@mail.com",
+      "mobile": "919999999999",
+      "referralCode": "NIR123",
+      "totalStakes": 3,
+      "activeStakes": 2,
+      "closedStakes": 1,
+      "totalStakedTokens": 5000,
+      "totalRewardTokens": 900,
+      "totalExpectedReturn": 5900,
+      "fixedStakedTokens": 3000,
+      "flexibleStakedTokens": 2000,
+      "latestStakeAt": "2026-03-25T10:00:00.000Z",
+      "stakeStatuses": ["active", "paid"],
+      "actions": {
+        "viewDetails": true
+      }
+    }
+  ],
+  "pagination": { "total": 1, "page": 1, "limit": 20, "hasMore": false }
+}
+```
+
+### GET `/api/admin/panel/staking/users/:userId`
+- Purpose: second admin screen after clicking one staking user.
+- Returns:
+  - `user`
+  - `summary`
+  - `positions`
+- Response:
+```json
+{
+  "user": {
+    "userId": "USER_ID",
+    "fullName": "User Name",
+    "email": "user@mail.com",
+    "mobile": "919999999999",
+    "referralCode": "NIR123",
+    "accountStatus": "active",
+    "joinedAt": "2026-01-10T08:00:00.000Z",
+    "lastLoginAt": "2026-03-24T12:00:00.000Z",
+    "tokenWalletBalance": 1200,
+    "bankDetails": {
+      "accountHolderName": "User Name",
+      "accountNumber": "XXXXXX",
+      "ifsc": "HDFC0001234",
+      "bankName": "HDFC"
+    }
+  },
+  "summary": {
+    "totalStakes": 2,
+    "activeStakes": 1,
+    "closedStakes": 1,
+    "fixedPlans": 1,
+    "flexiblePlans": 1,
+    "totalStakedTokens": 3000,
+    "totalRewardTokens": 360,
+    "totalRewardPaid": 120,
+    "totalRewardPending": 240,
+    "totalExpectedReturn": 3360,
+    "availableDurationsMonths": [3, 12],
+    "statuses": ["active", "paid"]
+  },
+  "positions": [
+    {
+      "stakeId": "STAKE_ID",
+      "tokenAmount": 1000,
+      "stakingType": "fixed",
+      "durationMonths": 12,
+      "interestRate": 2,
+      "monthlyInterestAmount": 20,
+      "interestAmount": 240,
+      "expectedReturn": 1240,
+      "rewardPaid": 60,
+      "rewardPending": 180,
+      "status": "active",
+      "startedAt": "2026-01-01T00:00:00.000Z",
+      "maturesAt": "2027-01-01T00:00:00.000Z",
+      "claimedAt": null,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-03-25T00:00:00.000Z",
+      "withdrawal": {
+        "noticeDays": 0
+      },
+      "vestingSchedule": [
+        {
+          "paymentNo": 1,
+          "label": "Month 1",
+          "amount": 20,
+          "status": "withdrawn",
+          "dueAt": "2026-02-01T00:00:00.000Z"
+        }
+      ],
+      "timeline": [
+        {
+          "label": "created",
+          "at": "2026-01-01T00:00:00.000Z",
+          "status": "completed"
+        }
+      ],
+      "metadata": {
+        "stackPlan": "fixed"
+      }
+    }
+  ]
+}
+```
+
 ### GET `/api/admin/panel/staking/closures`
 - Query: `page`, `limit`, `status`, `stakingType(fixed|flexible)`, `userId`
 - Returns closure queue rows with reward and maturity.
@@ -464,5 +586,7 @@ Use HTTP code handling in UI:
    - transactions: `/panel/users/:id/transactions`
    - referrals direct/tree: `/panel/users/:id/referrals/*`
    - wallet: `/panel/users/:id/wallet`
-6. Role-check action buttons using `actions` from listing payload and/or `role` from JWT response.
-
+6. Staking admin flow:
+   - list screen: `GET /api/admin/panel/staking/users`
+   - details screen: `GET /api/admin/panel/staking/users/:userId`
+7. Role-check action buttons using `actions` from listing payload and/or `role` from JWT response.

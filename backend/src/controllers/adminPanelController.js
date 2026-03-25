@@ -950,6 +950,315 @@ const syncStakingStatuses = async () => {
   );
 };
 
+const ACTIVE_STAKING_STATUSES = ['active', 'withdrawal_requested', 'withdrawal_available', 'matured'];
+
+const normalizeAdminStakeType = (value) => (value === 'fluid' ? 'flexible' : value);
+
+const getStakeRewardPaid = (stake) =>
+  (stake.interestHistory || [])
+    .filter((entry) => entry.status === 'withdrawn')
+    .reduce((sum, entry) => sum + (entry.amount || 0), 0);
+
+const getStakeTimeline = (stake) => {
+  const timeline = [
+    { label: 'created', at: stake.createdAt || stake.startedAt, status: 'completed' },
+    { label: 'started', at: stake.startedAt, status: 'completed' },
+    { label: 'matures', at: stake.maturesAt, status: stake.maturesAt && stake.maturesAt <= new Date() ? 'completed' : 'upcoming' },
+  ];
+
+  if (stake.withdrawal?.requestedAt) {
+    timeline.push({
+      label: 'withdrawal_requested',
+      at: stake.withdrawal.requestedAt,
+      status: 'completed',
+    });
+  }
+
+  if (stake.withdrawal?.withdrawableAt) {
+    timeline.push({
+      label: 'withdrawal_available',
+      at: stake.withdrawal.withdrawableAt,
+      status: stake.withdrawal.withdrawableAt <= new Date() ? 'completed' : 'upcoming',
+    });
+  }
+
+  if (stake.metadata?.closedAt) {
+    timeline.push({
+      label: 'closed',
+      at: stake.metadata.closedAt,
+      status: 'completed',
+    });
+  }
+
+  if (stake.metadata?.payoutTriggeredAt) {
+    timeline.push({
+      label: 'payout_triggered',
+      at: stake.metadata.payoutTriggeredAt,
+      status: 'completed',
+    });
+  }
+
+  if (stake.claimedAt) {
+    timeline.push({
+      label: 'claimed',
+      at: stake.claimedAt,
+      status: 'completed',
+    });
+  }
+
+  return timeline
+    .filter((item) => item.at)
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+};
+
+const listAdminStakingUsers = async (req, res) => {
+  try {
+    await syncStakingStatuses();
+
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const match = {};
+    if (req.query.status) match.status = String(req.query.status).trim().toLowerCase();
+    if (req.query.type) {
+      const type = req.query.type === 'flexible' ? 'fluid' : req.query.type;
+      match.stackType = String(type).trim().toLowerCase();
+    }
+    if (req.query.durationMonths) {
+      const durationMonths = Number(req.query.durationMonths);
+      if (!Number.isNaN(durationMonths)) match.durationMonths = durationMonths;
+    }
+
+    const search = String(req.query.search || '').trim();
+    const userSearchMatch = search
+      ? {
+          $or: [
+            { 'user.name': { $regex: search, $options: 'i' } },
+            { 'user.email': { $regex: search, $options: 'i' } },
+            { 'user.mobile': { $regex: search, $options: 'i' } },
+            { 'user.referralCode': { $regex: search, $options: 'i' } },
+          ],
+        }
+      : null;
+
+    const pipeline = [
+      { $match: match },
+      {
+        $group: {
+          _id: '$user',
+          totalStakes: { $sum: 1 },
+          activeStakes: {
+            $sum: {
+              $cond: [{ $in: ['$status', ACTIVE_STAKING_STATUSES] }, 1, 0],
+            },
+          },
+          closedStakes: {
+            $sum: {
+              $cond: [{ $in: ['$status', ['closed', 'paid', 'claimed', 'cancelled']] }, 1, 0],
+            },
+          },
+          totalStakedTokens: { $sum: '$tokenAmount' },
+          totalRewardTokens: { $sum: '$interestAmount' },
+          totalExpectedReturn: { $sum: '$expectedReturn' },
+          fixedStakedTokens: {
+            $sum: {
+              $cond: [{ $eq: ['$stackType', 'fixed'] }, '$tokenAmount', 0],
+            },
+          },
+          flexibleStakedTokens: {
+            $sum: {
+              $cond: [{ $eq: ['$stackType', 'fluid'] }, '$tokenAmount', 0],
+            },
+          },
+          latestStakeAt: { $max: '$createdAt' },
+          statuses: { $addToSet: '$status' },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      { $match: { 'user.role': 'user' } },
+    ];
+
+    if (userSearchMatch) {
+      pipeline.push({ $match: userSearchMatch });
+    }
+
+    const countPipeline = [...pipeline, { $count: 'total' }];
+    const dataPipeline = [
+      ...pipeline,
+      { $sort: { latestStakeAt: -1, _id: 1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ];
+
+    const [rows, countRows] = await Promise.all([
+      StakingPosition.aggregate(dataPipeline),
+      StakingPosition.aggregate(countPipeline),
+    ]);
+
+    const data = rows.map((item) => ({
+      userId: item.user._id,
+      fullName: item.user.name,
+      email: item.user.email || null,
+      mobile: item.user.mobile || null,
+      referralCode: item.user.referralCode || null,
+      totalStakes: item.totalStakes || 0,
+      activeStakes: item.activeStakes || 0,
+      closedStakes: item.closedStakes || 0,
+      totalStakedTokens: item.totalStakedTokens || 0,
+      totalRewardTokens: item.totalRewardTokens || 0,
+      totalExpectedReturn: item.totalExpectedReturn || 0,
+      fixedStakedTokens: item.fixedStakedTokens || 0,
+      flexibleStakedTokens: item.flexibleStakedTokens || 0,
+      latestStakeAt: item.latestStakeAt || null,
+      stakeStatuses: item.statuses || [],
+      actions: {
+        viewDetails: true,
+      },
+    }));
+
+    const total = countRows?.[0]?.total || 0;
+    return res.json({
+      data,
+      pagination: {
+        total,
+        page,
+        limit,
+        hasMore: skip + data.length < total,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+const getAdminStakingUserDetail = async (req, res) => {
+  try {
+    await syncStakingStatuses();
+
+    if (!ensureObjectId(req.params.userId)) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
+
+    const user = await User.findById(req.params.userId).select(
+      'name email mobile referralCode isActive createdAt lastLoginAt role bankDetails',
+    );
+    if (!user || user.role !== 'user') {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const [holding, stakes] = await Promise.all([
+      IcoHolding.findOne({ user: user._id }).select('balance'),
+      StakingPosition.find({ user: user._id }).sort({ createdAt: -1 }),
+    ]);
+
+    const summary = stakes.reduce(
+      (acc, stake) => {
+        const rewardPaid = getStakeRewardPaid(stake);
+        acc.totalStakes += 1;
+        acc.totalStakedTokens += stake.tokenAmount || 0;
+        acc.totalRewardTokens += stake.interestAmount || 0;
+        acc.totalExpectedReturn += stake.expectedReturn || 0;
+        acc.totalRewardPaid += rewardPaid;
+        if (ACTIVE_STAKING_STATUSES.includes(stake.status)) acc.activeStakes += 1;
+        if (['closed', 'paid', 'claimed', 'cancelled'].includes(stake.status)) acc.closedStakes += 1;
+        if (stake.stackType === 'fixed') acc.fixedPlans += 1;
+        if (stake.stackType === 'fluid') acc.flexiblePlans += 1;
+        acc.statuses.add(stake.status);
+        acc.durations.add(stake.durationMonths);
+        return acc;
+      },
+      {
+        totalStakes: 0,
+        activeStakes: 0,
+        closedStakes: 0,
+        totalStakedTokens: 0,
+        totalRewardTokens: 0,
+        totalRewardPaid: 0,
+        totalExpectedReturn: 0,
+        fixedPlans: 0,
+        flexiblePlans: 0,
+        statuses: new Set(),
+        durations: new Set(),
+      },
+    );
+
+    const positions = stakes.map((stake) => ({
+      stakeId: stake._id,
+      tokenAmount: stake.tokenAmount,
+      stakingType: normalizeAdminStakeType(stake.stackType),
+      durationMonths: stake.durationMonths,
+      interestRate: stake.interestRate,
+      monthlyInterestAmount: stake.monthlyInterestAmount,
+      interestAmount: stake.interestAmount,
+      expectedReturn: stake.expectedReturn,
+      rewardPaid: getStakeRewardPaid(stake),
+      rewardPending: Math.max((stake.interestAmount || 0) - getStakeRewardPaid(stake), 0),
+      status: stake.status,
+      startedAt: stake.startedAt,
+      maturesAt: stake.maturesAt,
+      claimedAt: stake.claimedAt || null,
+      createdAt: stake.createdAt,
+      updatedAt: stake.updatedAt,
+      withdrawal: stake.withdrawal || null,
+      vestingSchedule: (stake.interestHistory || []).map((entry, index) => ({
+        paymentNo: index + 1,
+        label: entry.label || `Month ${index + 1}`,
+        amount: entry.amount || 0,
+        status: entry.status,
+        dueAt: entry.creditedAt || null,
+      })),
+      timeline: getStakeTimeline(stake),
+      metadata: stake.metadata || {},
+    }));
+
+    return res.json({
+      user: {
+        userId: user._id,
+        fullName: user.name,
+        email: user.email || null,
+        mobile: user.mobile || null,
+        referralCode: user.referralCode || null,
+        accountStatus: user.isActive ? 'active' : 'suspended',
+        joinedAt: user.createdAt,
+        lastLoginAt: user.lastLoginAt || null,
+        tokenWalletBalance: holding?.balance || 0,
+        bankDetails: {
+          accountHolderName: user.bankDetails?.accountHolderName || null,
+          accountNumber: user.bankDetails?.accountNumber || null,
+          ifsc: user.bankDetails?.ifsc || null,
+          bankName: user.bankDetails?.bankName || null,
+        },
+      },
+      summary: {
+        totalStakes: summary.totalStakes,
+        activeStakes: summary.activeStakes,
+        closedStakes: summary.closedStakes,
+        fixedPlans: summary.fixedPlans,
+        flexiblePlans: summary.flexiblePlans,
+        totalStakedTokens: summary.totalStakedTokens,
+        totalRewardTokens: summary.totalRewardTokens,
+        totalRewardPaid: summary.totalRewardPaid,
+        totalRewardPending: Math.max(summary.totalRewardTokens - summary.totalRewardPaid, 0),
+        totalExpectedReturn: summary.totalExpectedReturn,
+        availableDurationsMonths: Array.from(summary.durations).sort((a, b) => a - b),
+        statuses: Array.from(summary.statuses),
+      },
+      positions,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 const listStakingClosures = async (req, res) => {
   try {
     await syncStakingStatuses();
@@ -1841,6 +2150,8 @@ module.exports = {
   approveCommissionWithdrawalRequest,
   rejectCommissionWithdrawalRequest,
   markCommissionWithdrawalRequestPaid,
+  listAdminStakingUsers,
+  getAdminStakingUserDetail,
   listStakingClosures,
   closeStakingPosition,
   triggerStakingPayout,
