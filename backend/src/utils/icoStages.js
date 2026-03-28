@@ -14,8 +14,8 @@ const addDays = (date, days) => {
 const buildDefaultPreIcoWindow = () => {
   const now = new Date();
   const year = now.getFullYear();
-  const start = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
-  const end = new Date(Date.UTC(year, 1, 1, 23, 59, 59));
+  const start = new Date(Date.UTC(year, 3, 1, 0, 0, 0));
+  const end = new Date(Date.UTC(year, 5, 1, 23, 59, 59));
   return { start, end };
 };
 
