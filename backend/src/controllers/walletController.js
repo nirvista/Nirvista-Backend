@@ -29,6 +29,9 @@ const MAX_TOPUP_AMOUNT = Number(process.env.WALLET_MAX_TOPUP_AMOUNT || 200000);
 const MIN_WITHDRAW_AMOUNT = Number(
   process.env.WALLET_MIN_WITHDRAW_AMOUNT || 100,
 );
+const MIN_REFERRAL_WITHDRAW_AMOUNT = Number(
+  process.env.WALLET_MIN_REFERRAL_WITHDRAW_AMOUNT || MIN_WITHDRAW_AMOUNT,
+);
 const MIN_REFERRAL_REDEEM = Number(
   process.env.WALLET_MIN_REFERRAL_REDEEM || 10,
 );
@@ -137,6 +140,21 @@ const buildInterestSchedule = (startAt, monthlyAmount, durationMonths) => {
   }
   return schedule;
 };
+
+const REFERRAL_WITHDRAWAL_STATUSES = ['initiated', 'pending', 'processed'];
+const getWithdrawalSource = (transaction) => transaction?.metadata?.withdrawalSource || 'wallet';
+
+const buildPayoutDetailsSnapshot = (payoutMethod, user) =>
+  payoutMethod === 'bank'
+    ? {
+        accountHolderName: user.bankDetails?.accountHolderName || null,
+        accountNumber: user.bankDetails?.accountNumber || null,
+        ifsc: user.bankDetails?.ifsc || null,
+        bankName: user.bankDetails?.bankName || null,
+      }
+    : {
+        upiId: user.upiDetails?.upiId || null,
+      };
 
 const buildStackPlanPayload = () =>
   VALID_STACK_TYPES.map((stackType) => {
@@ -581,6 +599,7 @@ const requestWalletWithdrawal = async (req, res) => {
       description:
         req.body.note?.trim() || `Withdrawal request of INR ${amount}`,
       metadata: {
+        withdrawalSource: 'wallet',
         payoutMethod,
         payoutDetails,
         walletBalanceAtRequestTime,
@@ -609,6 +628,196 @@ const requestWalletWithdrawal = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+const getReferralWithdrawalSummary = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select(
+      'referralWalletBalance referralTotalEarned bankDetails upiDetails',
+    );
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const [pendingAgg, recentRequests] = await Promise.all([
+      WalletTransaction.aggregate([
+        {
+          $match: {
+            user: new mongoose.Types.ObjectId(req.user._id),
+            category: 'withdrawal',
+            status: { $in: REFERRAL_WITHDRAWAL_STATUSES },
+            'metadata.withdrawalSource': 'referral',
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalPendingAmount: { $sum: '$amount' },
+            totalPendingRequests: { $sum: 1 },
+          },
+        },
+      ]),
+      WalletTransaction.find({
+        user: req.user._id,
+        category: 'withdrawal',
+        'metadata.withdrawalSource': 'referral',
+      })
+        .sort({ createdAt: -1 })
+        .limit(20),
+    ]);
+
+    return res.json({
+      withdrawableAmount: user.referralWalletBalance || 0,
+      pendingAmount: pendingAgg?.[0]?.totalPendingAmount || 0,
+      pendingRequests: pendingAgg?.[0]?.totalPendingRequests || 0,
+      totalEarned: user.referralTotalEarned || 0,
+      minWithdrawalAmount: MIN_REFERRAL_WITHDRAW_AMOUNT,
+      payoutOptions: {
+        bank: {
+          available: Boolean(user.bankDetails?.accountNumber),
+          details: user.bankDetails || null,
+        },
+        upi: {
+          available: Boolean(user.upiDetails?.upiId),
+          details: user.upiDetails || null,
+        },
+      },
+      recentRequests: recentRequests.map(sanitizeTransaction),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+const requestReferralWithdrawal = async (req, res) => {
+  try {
+    const amount = Number(req.body.amount);
+    const payoutMethod = (req.body.payoutMethod || '').toLowerCase();
+    const { otp } = req.body || {};
+
+    if (Number.isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ message: 'A valid amount is required' });
+    }
+
+    if (amount < MIN_REFERRAL_WITHDRAW_AMOUNT) {
+      return res.status(400).json({
+        message: `Minimum referral withdrawal amount is INR ${MIN_REFERRAL_WITHDRAW_AMOUNT}`,
+      });
+    }
+
+    if (!['bank', 'upi'].includes(payoutMethod)) {
+      return res.status(400).json({ message: 'payoutMethod must be bank or upi' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const otpCheck = verifyUserOtp({ user, otp, purpose: 'withdrawal' });
+    if (!otpCheck.ok) {
+      return res.status(400).json({ message: otpCheck.message });
+    }
+
+    await ensureKycVerified(req.user._id);
+
+    const payoutDetails =
+      payoutMethod === 'bank' ? user.bankDetails : user.upiDetails;
+    if (!payoutDetails || !Object.keys(payoutDetails).length) {
+      return res.status(400).json({
+        message: `Add ${payoutMethod === 'bank' ? 'bank' : 'UPI'} details before withdrawing`,
+      });
+    }
+
+    const available = user.referralWalletBalance || 0;
+    if (available < amount) {
+      return res.status(400).json({ message: 'Insufficient referral balance' });
+    }
+
+    user.referralWalletBalance = available - amount;
+    user.otp = undefined;
+    await user.save();
+
+    const wallet = await getOrCreateWalletAccount(req.user._id);
+    const transaction = await WalletTransaction.create({
+      user: req.user._id,
+      wallet: wallet._id,
+      type: 'debit',
+      category: 'withdrawal',
+      amount,
+      currency: wallet.currency || 'INR',
+      status: 'pending',
+      description: req.body.note?.trim() || `Referral withdrawal request of INR ${amount}`,
+      paymentGateway: 'manual_referral_withdrawal',
+      metadata: {
+        withdrawalSource: 'referral',
+        payoutMethod,
+        payoutDetails: buildPayoutDetailsSnapshot(payoutMethod, user),
+        referralBalanceBefore: available,
+        referralBalanceAfter: user.referralWalletBalance,
+        note: req.body.note?.trim(),
+      },
+    });
+
+    recordStatusChange(transaction, 'pending', req.user._id, 'Referral withdrawal requested');
+    await transaction.save();
+
+    await createUserNotification({
+      userId: req.user._id,
+      title: 'Referral withdrawal requested',
+      message: `Your referral withdrawal request of INR ${amount} is pending admin review.`,
+      type: 'withdrawal',
+      metadata: { transactionId: transaction._id, withdrawalSource: 'referral' },
+    });
+
+    return res.status(201).json({
+      message: 'Referral withdrawal request created',
+      referral: {
+        withdrawableAmount: user.referralWalletBalance,
+        totalEarned: user.referralTotalEarned || 0,
+      },
+      transaction: sanitizeTransaction(transaction),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+const listReferralWithdrawals = async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const skip = (page - 1) * limit;
+
+    const filter = {
+      user: req.user._id,
+      category: 'withdrawal',
+      'metadata.withdrawalSource': 'referral',
+    };
+    if (req.query.status) {
+      filter.status = String(req.query.status).trim().toLowerCase();
+    }
+
+    const [transactions, total] = await Promise.all([
+      WalletTransaction.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      WalletTransaction.countDocuments(filter),
+    ]);
+
+    return res.json({
+      transactions: transactions.map(sanitizeTransaction),
+      pagination: {
+        total,
+        page,
+        limit,
+        hasMore: skip + transactions.length < total,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -1167,23 +1376,34 @@ const adminUpdateWalletTransaction = async (req, res) => {
       transaction.status = status;
       recordStatusChange(transaction, status, req.user._id, adminNote);
       if (transaction.category === 'withdrawal') {
-        wallet = await getOrCreateWalletAccount(transaction.user);
-
         const canSettle = ['pending', 'processed'].includes(previousStatus);
-        if (canSettle && status === 'completed') {
-          wallet.pendingWithdrawals = Math.max(
-            0,
-            wallet.pendingWithdrawals - transaction.amount,
-          );
-          wallet.totalDebited += transaction.amount;
-          await wallet.save();
-        } else if (canSettle && ['failed', 'cancelled'].includes(status)) {
-          wallet.balance += transaction.amount;
-          wallet.pendingWithdrawals = Math.max(
-            0,
-            wallet.pendingWithdrawals - transaction.amount,
-          );
-          await wallet.save();
+        if (getWithdrawalSource(transaction) === 'referral') {
+          const user = await User.findById(transaction.user);
+          if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+          }
+
+          if (canSettle && ['failed', 'cancelled'].includes(status)) {
+            user.referralWalletBalance = (user.referralWalletBalance || 0) + transaction.amount;
+            await user.save();
+          }
+        } else {
+          wallet = await getOrCreateWalletAccount(transaction.user);
+          if (canSettle && status === 'completed') {
+            wallet.pendingWithdrawals = Math.max(
+              0,
+              wallet.pendingWithdrawals - transaction.amount,
+            );
+            wallet.totalDebited += transaction.amount;
+            await wallet.save();
+          } else if (canSettle && ['failed', 'cancelled'].includes(status)) {
+            wallet.balance += transaction.amount;
+            wallet.pendingWithdrawals = Math.max(
+              0,
+              wallet.pendingWithdrawals - transaction.amount,
+            );
+            await wallet.save();
+          }
         }
       }
     }
@@ -1310,6 +1530,9 @@ module.exports = {
   listWalletTransactions,
   initiateWalletTopup,
   requestWalletWithdrawal,
+  getReferralWithdrawalSummary,
+  requestReferralWithdrawal,
+  listReferralWithdrawals,
   redeemReferralEarnings,
   swapMainToToken,
   stakeTokens,

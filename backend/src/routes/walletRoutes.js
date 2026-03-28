@@ -5,6 +5,9 @@ const {
   listWalletTransactions,
   initiateWalletTopup,
   requestWalletWithdrawal,
+  getReferralWithdrawalSummary,
+  requestReferralWithdrawal,
+  listReferralWithdrawals,
   redeemReferralEarnings,
   swapMainToToken,
   stakeTokens,
@@ -24,6 +27,9 @@ router.get('/analytics', getWalletAnalytics);
 router.get('/transactions', listWalletTransactions);
 router.post('/topup', initiateWalletTopup);
 router.post('/withdraw', requestWalletWithdrawal);
+router.get('/referral/withdrawal-summary', getReferralWithdrawalSummary);
+router.get('/referral/withdrawals', listReferralWithdrawals);
+router.post('/referral/withdraw', requestReferralWithdrawal);
 router.post('/swap', swapMainToToken);
 router.post('/stake', stakeTokens);
 router.get('/stakes', listStakes);

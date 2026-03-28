@@ -92,6 +92,7 @@ const {
   adminUpdateWalletTransaction,
   adminManualWalletCredit,
 } = require('../controllers/walletController');
+const { singleImageUpload } = require('../middleware/uploadMiddleware');
 const { protect, requireAdmin, requirePrivileged, requireSuperAdmin } = require('../middleware/authMiddleware');
 
 router.use(protect, requirePrivileged);
@@ -167,7 +168,12 @@ router.get('/panel/commission-withdrawals', listCommissionWithdrawalRequests);
 router.get('/panel/commission-withdrawals/:requestId', getCommissionWithdrawalRequestDetail);
 router.post('/panel/commission-withdrawals/:requestId/approve', requireAdmin, approveCommissionWithdrawalRequest);
 router.post('/panel/commission-withdrawals/:requestId/reject', requireAdmin, rejectCommissionWithdrawalRequest);
-router.post('/panel/commission-withdrawals/:requestId/mark-paid', requireAdmin, markCommissionWithdrawalRequestPaid);
+router.post(
+  '/panel/commission-withdrawals/:requestId/mark-paid',
+  requireAdmin,
+  singleImageUpload('proofImage'),
+  markCommissionWithdrawalRequestPaid,
+);
 
 router.get('/panel/staking/users', listAdminStakingUsers);
 router.get('/panel/staking/users/:userId', getAdminStakingUserDetail);

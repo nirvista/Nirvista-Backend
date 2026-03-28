@@ -206,6 +206,7 @@ Authorization: Bearer <admin_jwt_token>
 
 ### GET `/api/admin/panel/commission-withdrawals`
 - Query: `page`, `limit`, `status`
+- Returns referral withdrawal requests only (`metadata.withdrawalSource = referral`)
 - Response row fields:
   - `requestId`
   - `userId/userName`
@@ -234,7 +235,12 @@ Authorization: Bearer <admin_jwt_token>
 - Mandatory `reason`.
 
 ### POST `/api/admin/panel/commission-withdrawals/:requestId/mark-paid` (`admin+`)
-- Body:
+- Content-Type: `multipart/form-data`
+- Fields:
+  - `transactionReference` (required)
+  - `paymentNote` (optional)
+  - `proofImage` (optional image upload)
+- Example:
 ```json
 {
   "transactionReference": "BANK_UTR_123",
@@ -242,6 +248,7 @@ Authorization: Bearer <admin_jwt_token>
 }
 ```
 - Mandatory `transactionReference`.
+- If `proofImage` is uploaded, response includes `proofImageUrl`.
 
 ## 4.4 Staking Closure + Unified Staking
 

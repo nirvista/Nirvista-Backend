@@ -18,6 +18,7 @@ const { getTokenSymbol, getTokenPrice } = require('../utils/tokenPrice');
 const { buildReferralTree } = require('../utils/referralTree');
 const { createUserNotification } = require('../utils/notificationService');
 const { getOrCreateWalletAccount } = require('../utils/walletAccount');
+const { uploadImageBuffer, isCloudinaryConfigured } = require('../utils/cloudinary');
 const {
   resolveActivationStatusMap,
   resolveUserActivationStatus,
@@ -58,6 +59,8 @@ const appendStatusHistory = (transaction, status, changedBy, note) => {
     },
   ];
 };
+
+const getWithdrawalSource = (transaction) => transaction?.metadata?.withdrawalSource || 'wallet';
 
 const logAudit = async ({ actor, actorRole, action, entityType, entityId, before, after, metadata }) => {
   try {
@@ -707,7 +710,7 @@ const listCommissionWithdrawalRequests = async (req, res) => {
     const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
     const skip = (page - 1) * limit;
 
-    const filter = { category: 'withdrawal' };
+    const filter = { category: 'withdrawal', 'metadata.withdrawalSource': 'referral' };
     if (req.query.status) filter.status = String(req.query.status).trim().toLowerCase();
 
     const [rows, total] = await Promise.all([
@@ -756,6 +759,7 @@ const getCommissionWithdrawalRequestDetail = async (req, res) => {
     const transaction = await WalletTransaction.findOne({
       _id: req.params.requestId,
       category: 'withdrawal',
+      'metadata.withdrawalSource': 'referral',
     }).populate('user', 'name email mobile bankDetails upiDetails referralWalletBalance referralTotalEarned');
 
     if (!transaction) {
@@ -766,7 +770,11 @@ const getCommissionWithdrawalRequestDetail = async (req, res) => {
       ReferralEarning.find({ earner: transaction.user._id })
         .sort({ createdAt: -1 })
         .limit(100),
-      WalletTransaction.find({ user: transaction.user._id, category: 'withdrawal' })
+      WalletTransaction.find({
+        user: transaction.user._id,
+        category: 'withdrawal',
+        'metadata.withdrawalSource': 'referral',
+      })
         .sort({ createdAt: -1 })
         .limit(20),
     ]);
@@ -793,7 +801,11 @@ const approveCommissionWithdrawalRequest = async (req, res) => {
       return res.status(400).json({ message: 'Invalid request id' });
     }
 
-    const tx = await WalletTransaction.findOne({ _id: requestId, category: 'withdrawal' });
+    const tx = await WalletTransaction.findOne({
+      _id: requestId,
+      category: 'withdrawal',
+      'metadata.withdrawalSource': 'referral',
+    });
     if (!tx) return res.status(404).json({ message: 'Request not found' });
     if (!['pending', 'initiated'].includes(tx.status)) {
       return res.status(400).json({ message: 'Only pending requests can be approved' });
@@ -836,18 +848,23 @@ const rejectCommissionWithdrawalRequest = async (req, res) => {
       return res.status(400).json({ message: 'Invalid request id' });
     }
 
-    const tx = await WalletTransaction.findOne({ _id: requestId, category: 'withdrawal' });
+    const tx = await WalletTransaction.findOne({
+      _id: requestId,
+      category: 'withdrawal',
+      'metadata.withdrawalSource': 'referral',
+    });
     if (!tx) return res.status(404).json({ message: 'Request not found' });
     if (!['pending', 'initiated', 'processed'].includes(tx.status)) {
       return res.status(400).json({ message: 'Only pending/approved requests can be rejected' });
     }
 
-    const wallet = await getOrCreateWalletAccount(tx.user);
-    if (wallet.pendingWithdrawals >= tx.amount) {
-      wallet.pendingWithdrawals -= tx.amount;
-      wallet.balance += tx.amount;
-      await wallet.save();
+    const user = await User.findById(tx.user);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
     }
+
+    user.referralWalletBalance = (user.referralWalletBalance || 0) + tx.amount;
+    await user.save();
 
     const before = { status: tx.status, metadata: tx.metadata };
     tx.status = 'failed';
@@ -871,7 +888,13 @@ const rejectCommissionWithdrawalRequest = async (req, res) => {
       metadata: { reason: String(reason).trim() },
     });
 
-    return res.json({ message: 'Withdrawal request rejected', request: tx, wallet });
+    return res.json({
+      message: 'Withdrawal request rejected',
+      request: tx,
+      referralWallet: {
+        balance: user.referralWalletBalance,
+      },
+    });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -890,17 +913,25 @@ const markCommissionWithdrawalRequestPaid = async (req, res) => {
       return res.status(400).json({ message: 'Invalid request id' });
     }
 
-    const tx = await WalletTransaction.findOne({ _id: requestId, category: 'withdrawal' });
+    const tx = await WalletTransaction.findOne({
+      _id: requestId,
+      category: 'withdrawal',
+      'metadata.withdrawalSource': 'referral',
+    });
     if (!tx) return res.status(404).json({ message: 'Request not found' });
     if (!['processed', 'pending', 'initiated'].includes(tx.status)) {
       return res.status(400).json({ message: 'Request cannot be marked as paid from current status' });
     }
 
-    const wallet = await getOrCreateWalletAccount(tx.user);
-    if (wallet.pendingWithdrawals >= tx.amount) {
-      wallet.pendingWithdrawals -= tx.amount;
-      wallet.totalDebited += tx.amount;
-      await wallet.save();
+    let proofUpload = null;
+    if (req.file?.buffer) {
+      if (!isCloudinaryConfigured()) {
+        return res.status(500).json({ message: 'Cloudinary is not configured on the server' });
+      }
+      proofUpload = await uploadImageBuffer(req.file.buffer, {
+        folder: `withdrawal-proofs/${tx.user}`,
+        publicId: `referral-withdrawal-${tx._id}-${Date.now()}`,
+      });
     }
 
     const before = { status: tx.status, metadata: tx.metadata };
@@ -911,6 +942,8 @@ const markCommissionWithdrawalRequestPaid = async (req, res) => {
       paidBy: req.user._id,
       transactionReference: String(transactionReference).trim(),
       paymentNote: paymentNote ? String(paymentNote).trim() : undefined,
+      proofImageUrl: proofUpload?.secure_url || tx.metadata?.proofImageUrl,
+      proofImagePublicId: proofUpload?.public_id || tx.metadata?.proofImagePublicId,
     };
     appendStatusHistory(tx, 'completed', req.user._id, 'Marked paid');
     await tx.save();
@@ -925,7 +958,11 @@ const markCommissionWithdrawalRequestPaid = async (req, res) => {
       after: { status: tx.status, metadata: tx.metadata },
     });
 
-    return res.json({ message: 'Withdrawal request marked as paid', request: tx, wallet });
+    return res.json({
+      message: 'Withdrawal request marked as paid',
+      request: tx,
+      proofImageUrl: tx.metadata?.proofImageUrl || null,
+    });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
